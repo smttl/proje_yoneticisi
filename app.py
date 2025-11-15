@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from flask import (
     Flask, render_template, request, redirect, url_for, flash, abort,
-    jsonify, session, send_file
+    jsonify, session, send_file, send_from_directory
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -15,6 +15,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import pandas as pd
 import io
+from PIL import Image as PILImage # Görüntü kırpma için eklendi
 
 # Yerel modülleri import et
 from models import db, User, Image, Detection, Score, ImageAssignment
@@ -32,18 +33,13 @@ instance_dir = os.path.join(basedir, 'instance')
 db_path = os.path.join(instance_dir, 'proje.db')
 
 app.config['SECRET_KEY'] = 'COK_GIZLI_BIR_ANAHTAR_12345'
-# Veritabanı yolu (Mutlak)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}' 
-
-# === Yolları mutlak (absolute) olarak tanımla ===
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['PREVIEW_FOLDER'] = os.path.join(basedir, 'static/previews')
-
 app.config['ALLOWED_EXTENSIONS'] = {'czi'}
-# Kendi YOLOv8 modelinizin yolunu buraya girin (Göreli yol)
 app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt' 
 
-# Gerekli klasörleri oluştur (Artık mutlak yolu kullanıyor)
+# Gerekli klasörleri oluştur
 os.makedirs(instance_dir, exist_ok=True) 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PREVIEW_FOLDER'], exist_ok=True)
@@ -66,24 +62,22 @@ def init_db_command():
     """Veritabanı tablolarını ve ilk kullanıcıları oluşturur."""
     db.create_all()
     
-    # 'uzman1' kullanıcısını oluştur
     if not User.query.filter_by(username='uzman1').first():
         hashed_password = bcrypt.generate_password_hash('123456').decode('utf-8')
-        new_user = User(username='uzman1', password=hashed_password, role='uzman') # Rolü 'uzman'
+        new_user = User(username='uzman1', password=hashed_password, role='uzman')
         db.session.add(new_user)
         print("Kullanıcı 'uzman1' oluşturuldu.")
 
-    # 'admin' kullanıcısını oluştur (şifre: admin)
     if not User.query.filter_by(username='admin').first():
         hashed_password = bcrypt.generate_password_hash('admin').decode('utf-8')
-        new_user = User(username='admin', password=hashed_password, role='admin') # Rolü 'admin'
+        new_user = User(username='admin', password=hashed_password, role='admin')
         db.session.add(new_user)
         print("Kullanıcı 'admin' oluşturuldu.")
         
     db.session.commit()
     print("Veritabanı başarıyla oluşturuldu/güncellendi.")
 
-# === YENİ: Admin Yetki Kontrolü ===
+# === Admin Yetki Kontrolü ===
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -98,19 +92,22 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # --- KULLANICI GİRİŞ/ÇIKIŞ SAYFALARI ---
-# Hem ana sayfa hem de /login yolu için GET ve POST metodlarını kabul et
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        # Admin ise admin paneline, değilse uzman paneline yönlendir
+        if current_user.role == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return redirect(url_for('dashboard'))
+            
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
         if user and bcrypt.check_password_hash(user.password, password):
             login_user(user, remember=True)
-            # YENİ: Admin ise admin paneline, değilse uzman paneline yönlendir
             if user.role == 'admin':
                 return redirect(url_for('admin_dashboard'))
             else:
@@ -127,12 +124,11 @@ def logout():
 
 # --- ANA UYGULAMA SAYFALARI ---
 
-# === UZMAN DASHBOARD (GÜNCELLENDİ) ===
+# === UZMAN DASHBOARD ===
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
     if request.method == 'POST':
-        # --- DOSYA YÜKLEME MANTIĞI ---
         if 'file' not in request.files:
             flash('Dosya kısmı yok', 'danger')
             return redirect(request.url)
@@ -142,44 +138,29 @@ def dashboard():
             return redirect(request.url)
 
         if file and allowed_file(file.filename):
-            
-            # 1. Orijinal adı al ve güvenli hale getir
             filename = secure_filename(file.filename)
-            
-            # 2. Dosya adını ve uzantısını ayır
             base_name, file_extension = os.path.splitext(filename)
-            
-            # 3. Benzersiz bir zaman damgası oluştur
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            
-            # 4. YENİ ID: Orijinal ad + zaman damgası
             image_id = f"{base_name}_{timestamp}"
-            
-            # 5. Sunucuya kaydedilecek tam dosya adı
             czi_filename_on_server = f"{image_id}{file_extension}"
-            
-            # 6. Dosyayı kaydet
             czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], czi_filename_on_server)
             file.save(czi_save_path)
-
+            
             try:
                 metadata, preview_path, detections = process_czi_image(
-                    czi_save_path,
-                    image_id, 
+                    czi_save_path, image_id,
                     app.config['PREVIEW_FOLDER'],
                     app.config['YOLO_MODEL_PATH']
                 )
-
-                # GÜNCELLEME: Yükleyen kişiyi (uploader_id) kaydet
+                
                 new_image = Image(
-                    id=image_id,
-                    file_path=czi_save_path,
+                    id=image_id, file_path=czi_save_path,
                     preview_path=preview_path, 
                     metadata_json=metadata,
-                    uploader_id=current_user.id # <-- YENİ
+                    uploader_id=current_user.id 
                 )
                 db.session.add(new_image)
-
+                
                 for det_data in detections:
                     new_detection = Detection(
                         id=det_data['id'],
@@ -187,30 +168,25 @@ def dashboard():
                         coordinates_labelme=det_data['coordinates_labelme']
                     )
                     db.session.add(new_detection)
-
+                
                 db.session.commit()
                 flash(f"Görüntü {image_id} başarıyla yüklendi.", 'success')
-
+            
             except Exception as e:
                 db.session.rollback()
-                if os.path.exists(czi_save_path):
-                    os.remove(czi_save_path)
+                if os.path.exists(czi_save_path): os.remove(czi_save_path) 
                 try:
                     error_preview_path_rel = f"previews/{image_id}.png"
                     error_preview_path_abs = os.path.join(basedir, 'static', error_preview_path_rel)
                     if os.path.exists(error_preview_path_abs):
                         os.remove(error_preview_path_abs)
-                except:
-                    pass 
+                except: pass 
                 flash(f"Görüntü işlenemedi: {e}", 'danger')
-
+                
             return redirect(url_for('dashboard'))
 
     # === GET İSTEĞİ (Sayfa Yüklendiğinde) ===
-    # 1. Bu uzmanın yüklediği resimleri bul
     uploaded_images = Image.query.filter_by(uploader_id=current_user.id).order_by(Image.id.desc()).all()
-    
-    # 2. Bu uzmana atanan resimleri bul
     assigned_images = Image.query.join(
         ImageAssignment, Image.id == ImageAssignment.image_id
     ).filter(
@@ -225,6 +201,7 @@ def dashboard():
         assigned_images=assigned_images
     )
 
+# === UZMAN ANNOTASYON SAYFASI ===
 @app.route('/annotate/<image_id>')
 @login_required
 def annotate_image(image_id):
@@ -259,6 +236,7 @@ def annotate_image(image_id):
         metadata_json=json.dumps(image.metadata_json)
     )
 
+# === UZMAN PUAN KAYDETME API ===
 @app.route('/api/save_score', methods=['POST'])
 @login_required
 def save_score():
@@ -273,7 +251,7 @@ def save_score():
         detection_id=detection_id,
         user_id=current_user.id
     ).first()
-
+    
     if not score_obj:
         score_obj = Score(detection_id=detection_id, user_id=current_user.id)
         db.session.add(score_obj)
@@ -292,14 +270,13 @@ def save_score():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # =====================================================================
-# ===  ADMIN PANELİ ROTALARI (YENİ)
+# ===  ADMIN PANELİ ROTALARI (TÜM YENİ ÖZELLİKLER)
 # =====================================================================
 
 @app.route('/admin')
 @login_required
-@admin_required # Sadece Adminler girebilir
+@admin_required 
 def admin_dashboard():
-    # Tüm resimleri ve uzmanları çek
     images = Image.query.order_by(Image.id.desc()).all()
     experts = User.query.filter_by(role='uzman').all()
     
@@ -318,7 +295,6 @@ def admin_assign_image(image_id):
         flash('Uzman seçilmedi.', 'danger')
         return redirect(url_for('admin_dashboard'))
 
-    # Bu atama zaten var mı diye kontrol et
     existing_assignment = ImageAssignment.query.filter_by(
         image_id=image_id, 
         expert_id=expert_id
@@ -327,7 +303,6 @@ def admin_assign_image(image_id):
     if existing_assignment:
         flash('Bu görüntü zaten bu uzmana atanmış.', 'info')
     else:
-        # Yeni atama oluştur
         new_assignment = ImageAssignment(
             image_id=image_id,
             expert_id=expert_id
@@ -351,7 +326,6 @@ def admin_image_detail(image_id):
 @login_required
 @admin_required
 def admin_download_scores():
-    # Veritabanından TÜM puanları çek
     query = db.session.query(
         Image.id.label('Resim_ID'),
         Detection.id.label('Oosit_ID'),
@@ -373,7 +347,6 @@ def admin_download_scores():
     
     df = pd.read_sql(query.statement, db.engine)
     
-    # Excel dosyasını hafızada oluştur
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='Tum_Puanlar', index=False)
@@ -386,6 +359,122 @@ def admin_download_scores():
         as_attachment=True,
         download_name=f'Oosit_Puanlari_Raporu_{datetime.now().strftime("%Y%m%d")}.xlsx'
     )
+
+# === YENİ: SİLME ROTASI ===
+@app.route('/admin/delete/image/<image_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_image(image_id):
+    img = Image.query.get_or_404(image_id)
+    
+    # 1. Dosyaları diskten sil
+    try:
+        # Orijinal CZI dosyasını sil
+        if os.path.exists(img.file_path):
+            os.remove(img.file_path)
+        
+        # Oluşturulan PNG dosyasını sil
+        # 'preview_path' = 'previews/dosya.png'
+        preview_filename = os.path.basename(img.preview_path)
+        preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
+        if os.path.exists(preview_full_path):
+            os.remove(preview_full_path)
+            
+    except OSError as e:
+        flash(f"Disk üzerinden dosya silinirken bir hata oluştu: {e}", 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # 2. Veritabanından kaydı sil
+    # (models.py'deki 'cascade' ayarı sayesinde bu görüntüye ait
+    # tüm tespitler, puanlar ve atamalar otomatik olarak silinecektir)
+    db.session.delete(img)
+    db.session.commit()
+    
+    flash(f"Görüntü '{image_id}' ve tüm ilişkili veriler kalıcı olarak silindi.", 'success')
+    return redirect(url_for('admin_dashboard'))
+
+# === YENİ: CZI İNDİRME ROTASI ===
+@app.route('/admin/download/czi/<image_id>')
+@login_required
+@admin_required
+def admin_download_czi(image_id):
+    img = Image.query.get_or_404(image_id)
+    try:
+        return send_from_directory(
+            app.config['UPLOAD_FOLDER'],
+            os.path.basename(img.file_path),
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        abort(404, "Dosya bulunamadı.")
+
+# === YENİ: PNG İNDİRME ROTASI ===
+@app.route('/admin/download/png/<image_id>')
+@login_required
+@admin_required
+def admin_download_png(image_id):
+    img = Image.query.get_or_404(image_id)
+    try:
+        return send_from_directory(
+            app.config['PREVIEW_FOLDER'],
+            os.path.basename(img.preview_path),
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        abort(404, "Dosya bulunamadı.")
+
+# === YENİ: LABELME JSON İNDİRME ROTASI ===
+@app.route('/admin/download/labelme/<detection_id>')
+@login_required
+@admin_required
+def admin_download_labelme(detection_id):
+    det = Detection.query.get_or_404(detection_id)
+    labelme_data = det.coordinates_labelme
+    
+    # JSON verisini bir dosya gibi döndür
+    return jsonify(labelme_data), 200, {
+        'Content-Disposition': f'attachment; filename={det.id}.json',
+        'Content-Type': 'application/json'
+    }
+
+# === YENİ: ANLIK GÖRÜNTÜ KIRPMA (CROPPING) ROTASI ===
+@app.route('/admin/image_crop/<detection_id>')
+@login_required
+@admin_required
+def admin_image_crop(detection_id):
+    det = Detection.query.get_or_404(detection_id)
+    img = det.parent_image
+    
+    # Kırpılacak ana PNG dosyasının tam yolunu bul
+    preview_filename = os.path.basename(img.preview_path)
+    preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
+    
+    if not os.path.exists(preview_full_path):
+        abort(404, "Ana önizleme dosyası bulunamadı.")
+
+    try:
+        # Ana PNG dosyasını Pillow ile aç
+        with PILImage.open(preview_full_path) as base_img:
+            # LabelMe koordinatlarını al [[x1, y1], [x2, y2]]
+            coords = det.coordinates_labelme['points']
+            # Pillow'un crop() fonksiyonu (left, top, right, bottom) formatını bekler
+            box = (int(coords[0][0]), int(coords[0][1]), int(coords[1][0]), int(coords[1][1]))
+            
+            # Görüntüyü kırp
+            cropped_img = base_img.crop(box)
+            
+            # Kırpılmış görüntüyü diske kaydetmek yerine hafızaya (memory buffer) kaydet
+            img_io = io.BytesIO()
+            cropped_img.save(img_io, 'PNG')
+            img_io.seek(0)
+            
+            # Hafızadaki bu görüntüyü doğrudan tarayıcıya gönder
+            return send_file(img_io, mimetype='image/png')
+            
+    except Exception as e:
+        print(f"Görüntü kırpma hatası (ID: {detection_id}): {e}")
+        abort(500, "Görüntü kırpılamadı.")
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')

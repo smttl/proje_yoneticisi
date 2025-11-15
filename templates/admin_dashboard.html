@@ -21,6 +21,11 @@
             display: inline-block; padding: 10px 15px; background: #28a745; 
             color: white; text-decoration: none; border-radius: 4px;
         }
+        /* YENİ: Silme Butonu Stili */
+        .btn-delete {
+            background: #dc3545; color: white; border: none; 
+            padding: 5px 10px; border-radius: 4px; cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -51,7 +56,7 @@
                         <th>Yükleyen Uzman</th>
                         <th>Puanlama Detayı</th>
                         <th>Uzmana Ata</th>
-                    </tr>
+                        <th>Yönet</th> </tr>
                 </thead>
                 <tbody>
                     {% for image in images %}
@@ -72,9 +77,15 @@
                                 <button type="submit">Ata</button>
                             </form>
                         </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_delete_image', image_id=image.id) }}" 
+                                  onsubmit="return confirm('Görüntüyü, tüm puanlarını ve tespitlerini kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.');">
+                                <button type="submit" class="btn-delete">Sil</button>
+                            </form>
+                        </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4">Sistemde hiç görüntü yok.</td></tr>
+                    <tr><td colspan="5">Sistemde hiç görüntü yok.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
