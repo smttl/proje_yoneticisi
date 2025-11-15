@@ -518,6 +518,76 @@ def admin_create_user():
 
     return redirect(url_for('admin_dashboard'))
 
+# === YENİ: UZMANIN MANUEL OOSİT EKLEMESİ İÇİN API ===
+@app.route('/api/add_detection', methods=['POST'])
+@login_required
+def api_add_detection():
+    data = request.json
+    image_id = data.get('image_id')
+    # Koordinatların '[[x1, y1], [x2, y2]]' formatında geldiğini varsayıyoruz
+    coordinates = data.get('coordinates')
+
+    if not image_id or not coordinates:
+        return jsonify({'success': False, 'error': 'Eksik veri: Resim ID veya koordinatlar eksik.'}), 400
+
+    image = Image.query.get(image_id)
+    if not image:
+        return jsonify({'success': False, 'error': 'İlişkili resim bulunamadı.'}), 404
+
+    try:
+        # Bu resim için mevcut en yüksek oosit numarasını bul
+        # Örn: 'resim_1', 'resim_2', ... 'resim_10'
+        # 'resim_1' -> 1, 'resim_10' -> 10
+        existing_detections = Detection.query.filter_by(parent_image_id=image_id).all()
+        
+        max_index = 0
+        for det in existing_detections:
+            try:
+                # ID'nin sonundaki sayıyı al (örn: '..._10' -> 10)
+                index = int(det.id.split('_')[-1])
+                if index > max_index:
+                    max_index = index
+            except ValueError:
+                # ID sonu sayı değilse (beklenmedik durum)
+                pass
+        
+        # Yeni ID'yi belirle
+        new_index = max_index + 1
+        new_detection_id = f"{image_id}_{new_index}"
+        
+        # Yeni tespiti oluştur
+        new_detection = Detection(
+            id=new_detection_id,
+            parent_image_id=image_id,
+            coordinates_labelme={
+                "shape_type": "rectangle",
+                "points": coordinates
+            }
+        )
+        
+        db.session.add(new_detection)
+        db.session.commit()
+        
+        # Arayüzün (JavaScript) kendini güncelleyebilmesi için
+        # yeni oluşturulan oositin tüm verilerini geri döndür.
+        new_detection_data = {
+            "id": new_detection.id,
+            "coordinates_labelme": new_detection.coordinates_labelme,
+            "scores": { # Boş puan formu için
+                "sitoplazma": None,
+                "zona": None,
+                "kumulus": None,
+                "oopla": None
+            }
+        }
+        
+        return jsonify({'success': True, 'new_detection': new_detection_data})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"HATA: /api/add_detection: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
