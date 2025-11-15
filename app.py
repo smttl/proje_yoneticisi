@@ -587,6 +587,42 @@ def api_add_detection():
         db.session.rollback()
         print(f"HATA: /api/add_detection: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+    
+    # === YENİ: UZMANIN TESPİT (OOSİT) SİLMESİ İÇİN API ===
+@app.route('/api/delete_detection', methods=['POST'])
+@login_required
+def api_delete_detection():
+    data = request.json
+    detection_id = data.get('detection_id')
+
+    if not detection_id:
+        return jsonify({'success': False, 'error': 'Eksik veri: detection_id eksik.'}), 400
+
+    # Tespiti veritabanında bul
+    detection_to_delete = Detection.query.get(detection_id)
+    
+    if not detection_to_delete:
+        return jsonify({'success': False, 'error': 'Tespit bulunamadı.'}), 404
+
+    # (Güvenlik notu: İdeal olarak, bu tespiti sadece o resme atanan 
+    # veya yükleyen uzmanın silebildiğini de kontrol edebiliriz, 
+    # ancak şimdilik tüm giriş yapmış uzmanların silebildiğini varsayıyoruz.)
+
+    try:
+        # Tespiti sil. 
+        # models.py'deki cascade ayarı sayesinde, bu tespite 
+        # bağlı TÜM puanlar (Score) da otomatik olarak silinecektir.
+        db.session.delete(detection_to_delete)
+        db.session.commit()
+        
+        # Arayüzün (JavaScript) kendini güncelleyebilmesi için
+        # silinen ID'yi geri döndür.
+        return jsonify({'success': True, 'deleted_id': detection_id})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"HATA: /api/delete_detection: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

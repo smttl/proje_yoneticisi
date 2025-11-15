@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <title>Değerlendir: {{ image.id }}</title>
     <style>
-        /* ... (tüm CSS stil kodlarınız buraya gelecek, 
-              bir önceki adımdaki stillerin hepsi aynı kalabilir) ... */
         body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
         #main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
         #top-bar { 
@@ -26,22 +24,50 @@
             border-left: 1px solid #ccc; overflow-y: auto; padding: 15px;
             flex-shrink: 0;
         }
+        
+        /* === ARAÇ BUTONU STİLLERİ (GÜNCELLENDİ) === */
         .tool-btn, .zoom-btn { 
             padding: 8px 12px; margin-right: 5px; cursor: pointer; 
             background: #ddd; border: 1px solid #aaa; border-radius: 4px;
         }
         .tool-btn.active { background: #007bff; color: white; }
-        /* YENİ: Ekleme Butonu Stili */
         #tool-add { background: #28a745; color: white; }
         #tool-add.active { background: #208037; }
+        /* YENİ: Silme Butonu Stili */
+        #tool-delete { background: #dc3545; color: white; }
+        #tool-delete.active { background: #b02a37; }
         
+        /* === PUANLAMA STİLLERİ (YENİ) === */
         #scoring-panel .detection {
             margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;
         }
         #scoring-panel .detection h3 { margin-top: 0; }
         #scoring-panel .form-group { margin-bottom: 10px; }
-        #scoring-panel .form-group label { display: block; margin-bottom: 5px; }
-        #scoring-panel .form-group input { width: 80px; padding: 5px; }
+        #scoring-panel .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        
+        /* YENİ: Puan Buton Grubu */
+        .score-buttons {
+            display: flex;
+            justify-content: space-between;
+        }
+        .score-btn {
+            flex-grow: 1;
+            padding: 8px 5px;
+            margin: 0 2px;
+            cursor: pointer;
+            border: 1px solid #aaa;
+            background: #eee;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .score-btn:hover { background: #ddd; }
+        /* İstediğiniz yeşil "aktif" durum */
+        .score-btn.active {
+            background: #28a745;
+            color: white;
+            border-color: #208037;
+        }
+        
         .status-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ccc; margin-left: 5px; }
         .status-light.saved { background: #28a745; }
     </style>
@@ -63,8 +89,9 @@
             <strong>Araçlar:</strong>
             <button id="tool-pan" class="tool-btn active">Gezin</button>
             <button id="tool-ruler" class="tool-btn">Cetvel</button>
-            
             <button id="tool-add" class="tool-btn">Oosit Ekle</button>
+            
+            <button id="tool-delete" class="tool-btn">Tespit Sil</button>
             |
             <strong>Zoom:</strong>
             <button id="btn-zoom-in" class="zoom-btn">+</button>
@@ -85,16 +112,16 @@
 
     <script>
         // --- Flask'tan Verileri Al ---
-        const imageId = "{{ image.id }}"; // YENİ: API'ye göndermek için
-        let detections = {{ detections_json | safe }}; // YENİ: 'let' yaptık, çünkü manuel ekleme yapacağız
+        const imageId = "{{ image.id }}";
+        let detections = {{ detections_json | safe }}; 
         const metadata = {{ metadata_json | safe }};
         const scaleUmPerPixel = metadata.scale_um_per_pixel;
 
         // --- Global Değişkenler ---
-        let currentTool = 'pan'; // 'pan', 'ruler', 'add'
+        let currentTool = 'pan'; // 'pan', 'ruler', 'add', 'delete' (YENİ)
         let isDrawing = false;
-        let drawStart = {}; // Hem cetvel hem de ekleme için
-        let drawEnd = {};   // Hem cetvel hem de ekleme için
+        let drawStart = {}; 
+        let drawEnd = {};   
         let zoomLevel = 1.0; 
         let isPanning = false; 
         let panStart = { x: 0, y: 0 }; 
@@ -111,11 +138,8 @@
         
         // --- 1. Başlangıç (Setup) ---
         window.onload = () => {
-            if (img.complete) {
-                initializeCanvas();
-            } else {
-                img.onload = initializeCanvas;
-            }
+            if (img.complete) initializeCanvas();
+            else img.onload = initializeCanvas;
             setupTools();
             setupZoom(); 
             populateScoringPanel();
@@ -131,14 +155,12 @@
             zoomLevel = Math.max(0.25, Math.min(newLevel, 5.0));
             const newWidth = img.naturalWidth * zoomLevel;
             const newHeight = img.naturalHeight * zoomLevel;
-            
             img.style.width = newWidth + 'px';
             img.style.height = newHeight + 'px';
             canvas.style.width = newWidth + 'px';
             canvas.style.height = newHeight + 'px';
             canvas.width = newWidth;
             canvas.height = newHeight;
-            
             drawAll();
             zoomInfo.textContent = `${Math.round(zoomLevel * 100)}%`;
         }
@@ -176,34 +198,28 @@
                 ctx.moveTo(drawStart.x, drawStart.y);
                 ctx.lineTo(drawEnd.x, drawEnd.y);
                 ctx.stroke();
-                
-                const { pixelDist, umDist } = calculateDistance(drawStart, drawEnd);
+                const { umDist } = calculateDistance(drawStart, drawEnd);
                 const text = `${umDist.toFixed(2)} µm`;
                 rulerInfo.textContent = text;
-                
                 ctx.fillStyle = '#00f';
                 ctx.font = `${14 * zoomLevel}px Arial`;
                 ctx.fillText(text, drawEnd.x + 5, drawEnd.y - 5);
             }
             
-            // C. YENİ: Oosit Ekleme Kutusunu Çiz (dinamik)
+            // C. Oosit Ekleme Kutusunu Çiz (dinamik)
             if (currentTool === 'add' && isDrawing) {
-                ctx.strokeStyle = '#28a745'; // Yeşil
+                ctx.strokeStyle = '#28a745';
                 ctx.lineWidth = 2 * zoomLevel; 
-                ctx.setLineDash([5, 5]); // Kesik çizgi
-                
+                ctx.setLineDash([5, 5]);
                 const width = drawEnd.x - drawStart.x;
                 const height = drawEnd.y - drawStart.y;
                 ctx.strokeRect(drawStart.x, drawStart.y, width, height);
-                
-                ctx.setLineDash([]); // Çizgi stilini sıfırla
+                ctx.setLineDash([]);
             }
         }
         
         function calculateDistance(start, end) {
-            const canvasPixelDx = end.x - start.x;
-            const canvasPixelDy = end.y - start.y;
-            const canvasPixelDist = Math.sqrt(canvasPixelDx**2 + canvasPixelDy**2);
+            const canvasPixelDist = Math.sqrt((end.x - start.x)**2 + (end.y - start.y)**2);
             const originalPixelDist = canvasPixelDist / zoomLevel; 
             const umDist = originalPixelDist * scaleUmPerPixel;
             return { pixelDist: originalPixelDist, umDist: umDist };
@@ -220,9 +236,11 @@
         function setupTools() {
             document.getElementById('tool-pan').onclick = () => setTool('pan');
             document.getElementById('tool-ruler').onclick = () => setTool('ruler');
-            document.getElementById('tool-add').onclick = () => setTool('add'); // YENİ
+            document.getElementById('tool-add').onclick = () => setTool('add');
+            document.getElementById('tool-delete').onclick = () => setTool('delete'); // YENİ
 
             canvas.onmousedown = (e) => {
+                // Silme aracı hariç diğerleri çizime başlar
                 if (currentTool === 'ruler' || currentTool === 'add') {
                     isDrawing = true;
                     drawStart = { x: e.offsetX, y: e.offsetY };
@@ -233,6 +251,8 @@
                     panStart.y = e.clientY;
                     canvas.style.cursor = 'grabbing';
                 }
+                // Silme aracı 'onmouseup'te çalışacak
+                
                 drawAll();
             };
 
@@ -256,28 +276,37 @@
                     drawEnd = { x: e.offsetX, y: e.offsetY };
                     
                     if (currentTool === 'add') {
-                        // === YENİ: Oosit Ekleme Mantığı ===
-                        // Kutunun sol-üst (x1,y1) ve sağ-alt (x2,y2) olmasını sağla
+                        // Oosit Ekleme
                         const canvasX1 = Math.min(drawStart.x, drawEnd.x);
                         const canvasY1 = Math.min(drawStart.y, drawEnd.y);
                         const canvasX2 = Math.max(drawStart.x, drawEnd.x);
                         const canvasY2 = Math.max(drawStart.y, drawEnd.y);
 
-                        // 1. Zoom'lu koordinatları Orijinal koordinatlara çevir
+                        // Orijinal koordinatlara çevir
                         const originalCoords = [
                             [canvasX1 / zoomLevel, canvasY1 / zoomLevel],
                             [canvasX2 / zoomLevel, canvasY2 / zoomLevel]
                         ];
                         
-                        // 2. Sunucuya kaydet
                         saveNewDetection(originalCoords);
-                        // Aracı tekrar 'pan'e al (kullanıcı dostu)
                         setTool('pan'); 
                     }
                 } 
                 else if (isPanning) {
                     isPanning = false;
                     if (currentTool === 'pan') canvas.style.cursor = 'grab';
+                }
+                // YENİ: Silme Mantığı
+                else if (currentTool === 'delete' && !isPanning && !isDrawing) {
+                    // Tıklanan oositi bul
+                    const clickPos = { x: e.offsetX, y: e.offsetY };
+                    const detectionToClick = findClickedDetection(clickPos);
+                    
+                    if (detectionToClick) {
+                        if (confirm(`'${detectionToClick.id}' ID'li oositi silmek istediğinizden emin misiniz?`)) {
+                            deleteDetectionOnServer(detectionToClick.id);
+                        }
+                    }
                 }
                 drawAll();
             };
@@ -295,57 +324,93 @@
             document.getElementById('tool-pan').classList.toggle('active', tool === 'pan');
             document.getElementById('tool-ruler').classList.toggle('active', tool === 'ruler');
             document.getElementById('tool-add').classList.toggle('active', tool === 'add');
+            document.getElementById('tool-delete').classList.toggle('active', tool === 'delete');
             
             if (tool === 'pan') {
                 canvas.style.cursor = 'grab';
                 rulerInfo.textContent = '';
             } else if (tool === 'ruler' || tool === 'add') {
                 canvas.style.cursor = 'crosshair';
+            } else if (tool === 'delete') {
+                canvas.style.cursor = 'not-allowed'; // Silme imleci
             }
             
-            drawStart = {}; // Çizim başlangıcını sıfırla
-            drawEnd = {};
-            drawAll(); // Cetvel/Ekleme çizimlerini temizle
+            drawStart = {}; drawEnd = {};
+            drawAll();
         }
 
-        // --- 4. Puanlama Paneli ve Kaydetme (GÜNCELLENDİ) ---
+        // --- 4. Puanlama Paneli ve Kaydetme (TAMAMEN GÜNCELLENDİ) ---
         
-        // YENİ: Sunucuya Yeni Tespiti (Oositi) Kaydetme Fonksiyonu
+        // YENİ: Tıklanan koordinatın hangi kutuya ait olduğunu bulur
+        function findClickedDetection(clickPos) {
+            const scaleX = canvas.width / img.naturalWidth;
+            const scaleY = canvas.height / img.naturalHeight;
+            
+            // Tıklananı bulmak için tersten döngü (üstteki daha önce bulunur)
+            for (let i = detections.length - 1; i >= 0; i--) {
+                const det = detections[i];
+                const coords = det.coordinates_labelme.points;
+                
+                // Orijinal koordinatları zoom'lu canvas koordinatlarına çevir
+                const x1 = coords[0][0] * scaleX;
+                const y1 = coords[0][1] * scaleY;
+                const x2 = coords[1][0] * scaleX;
+                const y2 = coords[1][1] * scaleY;
+                
+                // Tıklama bu kutunun içinde mi?
+                if (clickPos.x >= x1 && clickPos.x <= x2 && clickPos.y >= y1 && clickPos.y <= y2) {
+                    return det;
+                }
+            }
+            return null; // Hiçbir şey bulunamadı
+        }
+
+        // YENİ: Tespiti Sunucudan Silme Fonksiyonu
+        async function deleteDetectionOnServer(detectionId) {
+            try {
+                const response = await fetch('/api/delete_detection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ detection_id: detectionId })
+                });
+                const result = await response.json();
+                
+                if (result.success && result.deleted_id) {
+                    // 1. Global listeden sil
+                    detections = detections.filter(d => d.id !== result.deleted_id);
+                    // 2. Yan paneli yenile
+                    populateScoringPanel();
+                    // 3. Canvas'ı yenile
+                    drawAll();
+                } else {
+                    alert('Hata: Tespit silinemedi. ' + result.error);
+                }
+            } catch (error) {
+                alert('Tespit silinirken sunucuya bağlanılamadı.');
+            }
+        }
+        
+        // (Bu fonksiyonda değişiklik yok)
         async function saveNewDetection(originalCoords) {
-            console.log("Sunucuya gönderiliyor:", imageId, originalCoords);
             try {
                 const response = await fetch('/api/add_detection', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        image_id: imageId,
-                        coordinates: originalCoords
-                    })
+                    body: JSON.stringify({ image_id: imageId, coordinates: originalCoords })
                 });
-                
                 const result = await response.json();
-                
                 if (result.success && result.new_detection) {
-                    console.log("Başarılı:", result.new_detection);
-                    // 1. Yeni tespiti global listeye ekle
                     detections.push(result.new_detection);
-                    // 2. Yeni puanlama formunu oluştur
                     populateScoringPanel();
-                    // 3. Yeni kutuyu çiz
                     drawAll();
-                } else {
-                    alert('Hata: Oosit eklenemedi. ' + result.error);
-                }
-            } catch (error) {
-                alert('Oosit eklenirken sunucuya bağlanılamadı.');
-            }
+                } else { alert('Hata: Oosit eklenemedi. ' + result.error); }
+            } catch (error) { alert('Oosit eklenirken sunucuya bağlanılamadı.'); }
         }
         
-        // Bu fonksiyon artık 'detections' listesindeki her şeyi çizer
+        // YENİ: Puanlama Panelini Butonlarla Oluşturma
         function populateScoringPanel() {
             scoringPanel.innerHTML = '';
             
-            // Oositleri ID'ye göre sırala (örn: _1, _2, ... _10, _11)
             detections.sort((a, b) => {
                 const numA = parseInt(a.id.split('_').pop());
                 const numB = parseInt(b.id.split('_').pop());
@@ -360,46 +425,77 @@
                 const scores = det.scores;
                 const isSaved = Object.values(scores).some(s => s !== null);
                 
-                scoreForm.innerHTML = `
-                    <h3>Oosit: ${det.id.split('_').pop()} <span id="status-${det.id}" class="status-light ${isSaved ? 'saved' : ''}"></span></h3>
-                    <div class="form-group">
-                        <label>Sitoplazma Homojenitesi</label>
-                        <input type="number" min="1" max="5" name="sitoplazma" value="${scores.sitoplazma || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Zona Pellucida Yapısı</label>
-                        <input type="number" min="1" max="5" name="zona" value="${scores.zona || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Kumulus Bütünlüğü</label>
-                        <input type="number" min="1" max="5" name="kumulus" value="${scores.kumulus || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Ooplazmik İçerik</label>
-                        <input type="number" min="1" max="5" name="oopla" value="${scores.oopla || ''}">
-                    </div>
-                `;
+                let formHTML = `<h3>Oosit: ${det.id.split('_').pop()} <span id="status-${det.id}" class="status-light ${isSaved ? 'saved' : ''}"></span></h3>`;
                 
-                scoringPanel.appendChild(scoreForm);
+                // Puanlama kriterleri
+                const criteria = [
+                    { name: 'Sitoplazma', key: 'sitoplazma' },
+                    { name: 'Zona', key: 'zona' },
+                    { name: 'Kumulus', key: 'kumulus' },
+                    { name: 'Ooplazma', key: 'oopla' } // 'oopla' olarak düzelttim, sizde 'ooplazmik içerik' olabilir
+                ];
                 
-                // Kaydetme için 'change' event listener ekle
-                scoreForm.querySelectorAll('input').forEach(input => {
-                    input.onchange = () => saveScores(det.id);
+                // Her kriter için buton grupları oluştur
+                criteria.forEach(crit => {
+                    formHTML += `
+                        <div class="form-group">
+                            <label>${crit.name}</label>
+                            <div class="score-buttons" data-criterion="${crit.key}">
+                    `;
+                    // 1-5 arası butonlar
+                    for (let i = 1; i <= 5; i++) {
+                        // Veritabanından gelen puanla eşleşiyorsa 'active' (yeşil) yap
+                        const isActive = (scores[crit.key] === i) ? 'active' : '';
+                        formHTML += `
+                            <button class="score-btn ${isActive}" data-value="${i}" 
+                                    onclick="handleScoreClick(event, '${det.id}', '${crit.key}')">
+                                ${i}
+                            </button>
+                        `;
+                    }
+                    formHTML += `</div></div>`;
                 });
+                
+                scoreForm.innerHTML = formHTML;
+                scoringPanel.appendChild(scoreForm);
             });
         }
         
-        // Bu fonksiyonda değişiklik yok
+        // YENİ: Butona Tıklama Fonksiyonu
+        function handleScoreClick(event, detectionId, criterion) {
+            event.preventDefault(); // Formun submit olmasını engelle
+            
+            const clickedButton = event.target;
+            const value = clickedButton.dataset.value;
+            
+            // 1. Arayüzü anında güncelle (kardeş butonları temizle, bunu aktif et)
+            const buttonGroup = clickedButton.parentElement;
+            buttonGroup.querySelectorAll('.score-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            clickedButton.classList.add('active');
+            
+            // 2. Skoru sunucuya kaydet
+            saveScores(detectionId);
+        }
+
+        // GÜNCELLENDİ: Puanları Butonlardan Okuyacak Şekilde
         async function saveScores(detectionId) {
             const form = document.getElementById(`score-form-${detectionId}`);
             const statusLight = document.getElementById(`status-${detectionId}`);
             
-            const scores = {
-                sitoplazma: form.querySelector('input[name="sitoplazma"]').valueAsNumber || null,
-                zona: form.querySelector('input[name="zona"]').valueAsNumber || null,
-                kumulus: form.querySelector('input[name="kumulus"]').valueAsNumber || null,
-                oopla: form.querySelector('input[name="oopla"]').valueAsNumber || null,
-            };
+            // Puanları aktif (yeşil) butonlardan oku
+            const scores = {};
+            const criteria = ['sitoplazma', 'zona', 'kumulus', 'oopla'];
+            
+            criteria.forEach(critKey => {
+                const activeButton = form.querySelector(`.score-buttons[data-criterion="${critKey}"] .score-btn.active`);
+                if (activeButton) {
+                    scores[critKey] = Number(activeButton.dataset.value);
+                } else {
+                    scores[critKey] = null; // Hiçbiri seçili değilse
+                }
+            });
             
             try {
                 const response = await fetch('/api/save_score', {
@@ -414,6 +510,8 @@
                     statusLight.classList.add('saved');
                 } else {
                     alert('Hata: ' + result.error);
+                    // Hata olursa, optimistik güncellemeyi geri al (opsiyonel)
+                    // clickedButton.classList.remove('active');
                 }
             } catch (error) {
                 alert('Puanlar kaydedilemedi. Sunucu hatası.');
