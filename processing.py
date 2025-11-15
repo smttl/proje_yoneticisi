@@ -3,18 +3,15 @@ import numpy as np
 from PIL import Image as PILImage
 from ultralytics import YOLO
 import os
-
-# Kütüphaneyi değiştiriyoruz: aicspylibczi -> aicsimageio
 from aicsimageio import AICSImage
 
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
-    Bir .czi dosyasını aicsimageio kullanarak işler, metadata'yı çıkarır, 
-    PNG önizlemesi oluşturur ve YOLOv8 ile oositleri tespit eder.
+    Bir .czi dosyasını aicsimageio kullanarak işler.
+    Eğer 3+ kanal varsa RENKLİ (RGB) PNG oluşturur.
+    Eğer 1 kanal varsa SİYAH BEYAZ (Grayscale) PNG oluşturur.
     """
     
-    # 1. Görüntüyü AICSImage ile aç
-    # Bu nesne, metadata ve görüntü verisine standart erişim sağlar.
     try:
         img = AICSImage(czi_path)
     except Exception as e:
@@ -22,64 +19,79 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
 
     try:
         # --- 1. Metadata ve Ölçek Çıkarımı ---
-        
-        # aicsimageio, ölçek bilgisine 'physical_pixel_sizes' ile
-        # doğrudan ve güvenilir bir şekilde erişir.
         if img.physical_pixel_sizes.X is None:
             raise ValueError("Metadata içinde fiziksel piksel boyutu (X) bulunamadı.")
         
-        # Değer metre cinsindendir (örn: 0.0000005)
         scale_x_meters = img.physical_pixel_sizes.X
-        
-        # Metreyi mikrometreye (µm) çevir
         scale_um_per_pixel = scale_x_meters * 1_000_000 
         
         metadata = {
             'scale_um_per_pixel': scale_um_per_pixel,
-            'dimensions': img.dims.order, # 'TCZYX' gibi
+            'dimensions': img.dims.order,
             'size_bytes': os.path.getsize(czi_path)
         }
 
-        # --- 2. PNG Önizlemesi Oluşturma ---
-        # Görüntü verisini numpy dizisi olarak al
-        # Ortadaki Z dilimini, ilk kanalı ve ilk zamanı alıyoruz
+        # --- 2. PNG Önizlemesi Oluşturma (RENKLİ / SİYAH BEYAZ) ---
+        
         z_slice = img.dims.Z // 2
+        num_channels = img.dims.C
         
-        # get_image_data("YX", ...) sadece 2 boyutlu (Y, X) bir dilim döndürür
-        img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0)
+        # Görüntüyü normalize etmek için (kontrast ayarı)
+        def normalize_contrast(data):
+            data = data.astype(np.float32)
+            p1 = np.percentile(data, 1)   # En karanlık %1
+            p99 = np.percentile(data, 99) # En parlak %1
+            data = np.clip(data, p1, p99) # Aykırı değerleri kırp
+            
+            min_val = np.min(data)
+            max_val = np.max(data)
+            
+            if max_val == min_val:
+                return np.zeros_like(data, dtype=np.uint8)
+            
+            data = (data - min_val) / (max_val - min_val) # 0-1 arasına yay
+            return (data * 255).astype(np.uint8)
+
         
-        # Görüntüyü 8-bit'e normalize et (0-255)
-        img_data = img_data.astype(np.float32)
-        img_min = np.min(img_data)
-        img_max = np.max(img_data)
-        
-        if img_max == img_min:
-            img_data = np.zeros_like(img_data, dtype=np.uint8)
+        if num_channels >= 3:
+            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME ===
+            # İlk 3 kanalı (C=0, 1, 2) (3, Y, X) şeklinde oku
+            img_data = img.get_image_data("CYX", Z=z_slice, T=0, C=[0, 1, 2])
+            
+            # 3 kanalı birlikte normalize et (renk dengesini korumak için)
+            img_data_normalized = normalize_contrast(img_data)
+            
+            # (3, Y, X) formatını -> (Y, X, 3) formatına çevir (PIL için)
+            img_data_rgb = np.transpose(img_data_normalized, (1, 2, 0))
+            
+            # 'RGB' modunda renkli olarak kaydet
+            pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
+            
         else:
-            img_data = (img_data - img_min) / (img_max - img_min)
-            img_data = (img_data * 255).astype(np.uint8)
-        
-        pil_img = PILImage.fromarray(img_data)
+            # === SİYAH BEYAZ (Grayscale) GÖRÜNTÜ İŞLEME ===
+            # Sadece ilk kanalı (C=0) oku (Y, X) şeklinde
+            img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0)
+            
+            # Normalize et (yüksek kontrastlı siyah beyaz)
+            img_data_normalized = normalize_contrast(img_data)
+            
+            # 'L' (Luminance/Grayscale) modunda kaydet
+            pil_img = PILImage.fromarray(img_data_normalized, 'L')
 
     except Exception as e:
-        # Hata ne olursa olsun (XML, Görüntü okuma vb.)
         raise e
-    
-    # Not: aicsimageio dosyaları otomatik kapattığı için 'finally' bloğuna gerek yok.
 
-   # --- 3. PNG Kaydetme ---
+    # --- 3. PNG Kaydetme ---
     preview_filename = f"{image_id}.png"
-    # 'preview_folder' artık '/path/to/project/static/previews'
     preview_full_path = os.path.join(preview_folder, preview_filename)
     pil_img.save(preview_full_path)
     
-    # === DÜZELTME: Yolu manuel olarak ve her zaman (/) ile birleştir ===
-    # HTML/url_for için veritabanına kaydedilecek yol
-    # "previews" + "/" + "IMG...png" = "previews/IMG...png"
+    # Veritabanına kaydedilecek web-uyumlu yol
     preview_path_relative = f"previews/{preview_filename}"
 
     # --- 4. YOLOv8 Tespiti ---
     model = YOLO(yolo_model_path)
+    # YOLO'yu renkli (RGB) görüntü üzerinde çalıştır
     results = model.predict(preview_full_path)
     
     detections = []
