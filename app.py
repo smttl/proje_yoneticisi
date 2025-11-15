@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import pandas as pd
 import io
-from PIL import Image as PILImage # Görüntü kırpma için eklendi
+from PIL import Image as PILImage # Görüntü kırpma ve boyut okuma için
 
 # Yerel modülleri import et
 from models import db, User, Image, Detection, Score, ImageAssignment
@@ -96,7 +96,6 @@ def allowed_file(filename):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        # Admin ise admin paneline, değilse uzman paneline yönlendir
         if current_user.role == 'admin':
             return redirect(url_for('admin_dashboard'))
         else:
@@ -270,7 +269,7 @@ def save_score():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # =====================================================================
-# ===  ADMIN PANELİ ROTALARI (TÜM YENİ ÖZELLİKLER)
+# ===  ADMIN PANELİ ROTALARI
 # =====================================================================
 
 @app.route('/admin')
@@ -360,7 +359,6 @@ def admin_download_scores():
         download_name=f'Oosit_Puanlari_Raporu_{datetime.now().strftime("%Y%m%d")}.xlsx'
     )
 
-# === YENİ: SİLME ROTASI ===
 @app.route('/admin/delete/image/<image_id>', methods=['POST'])
 @login_required
 @admin_required
@@ -369,12 +367,9 @@ def admin_delete_image(image_id):
     
     # 1. Dosyaları diskten sil
     try:
-        # Orijinal CZI dosyasını sil
         if os.path.exists(img.file_path):
             os.remove(img.file_path)
         
-        # Oluşturulan PNG dosyasını sil
-        # 'preview_path' = 'previews/dosya.png'
         preview_filename = os.path.basename(img.preview_path)
         preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
         if os.path.exists(preview_full_path):
@@ -384,16 +379,13 @@ def admin_delete_image(image_id):
         flash(f"Disk üzerinden dosya silinirken bir hata oluştu: {e}", 'danger')
         return redirect(url_for('admin_dashboard'))
 
-    # 2. Veritabanından kaydı sil
-    # (models.py'deki 'cascade' ayarı sayesinde bu görüntüye ait
-    # tüm tespitler, puanlar ve atamalar otomatik olarak silinecektir)
+    # 2. Veritabanından kaydı sil (cascade delete çalışır)
     db.session.delete(img)
     db.session.commit()
     
     flash(f"Görüntü '{image_id}' ve tüm ilişkili veriler kalıcı olarak silindi.", 'success')
     return redirect(url_for('admin_dashboard'))
 
-# === YENİ: CZI İNDİRME ROTASI ===
 @app.route('/admin/download/czi/<image_id>')
 @login_required
 @admin_required
@@ -408,7 +400,6 @@ def admin_download_czi(image_id):
     except FileNotFoundError:
         abort(404, "Dosya bulunamadı.")
 
-# === YENİ: PNG İNDİRME ROTASI ===
 @app.route('/admin/download/png/<image_id>')
 @login_required
 @admin_required
@@ -423,21 +414,53 @@ def admin_download_png(image_id):
     except FileNotFoundError:
         abort(404, "Dosya bulunamadı.")
 
-# === YENİ: LABELME JSON İNDİRME ROTASI ===
-@app.route('/admin/download/labelme/<detection_id>')
+# === YENİ: TÜM TESPİTLER İÇİN LABELME JSON İNDİRME ROTASI ===
+@app.route('/admin/download/labelme/image/<image_id>')
 @login_required
 @admin_required
-def admin_download_labelme(detection_id):
-    det = Detection.query.get_or_404(detection_id)
-    labelme_data = det.coordinates_labelme
+def admin_download_labelme_image(image_id):
+    image = Image.query.get_or_404(image_id)
     
-    # JSON verisini bir dosya gibi döndür
-    return jsonify(labelme_data), 200, {
-        'Content-Disposition': f'attachment; filename={det.id}.json',
+    # Standart LabelMe JSON dosya yapısını oluştur
+    labelme_output = {
+        "version": "5.0.1", 
+        "flags": {},
+        "shapes": [], # Tespitler bu listeye eklenecek
+        "imagePath": f"{image.id}.png", 
+        "imageData": None,
+        "imageHeight": None,
+        "imageWidth": None
+    }
+
+    # PNG'nin boyutlarını al
+    try:
+        preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], f"{image.id}.png")
+        with PILImage.open(preview_full_path) as pil_img:
+            labelme_output["imageWidth"] = pil_img.width
+            labelme_output["imageHeight"] = pil_img.height
+    except Exception:
+        pass 
+
+    # Bu görüntüye ait TÜM tespitleri veritabanından bul
+    detections = Detection.query.filter_by(parent_image_id=image_id).all()
+    
+    # Her tespiti LabelMe "shapes" formatına dönüştür ve listeye ekle
+    for det in detections:
+        shape = {
+            "label": det.id, # "label" olarak oositin benzersiz ID'sini kullanıyoruz
+            "points": det.coordinates_labelme['points'],
+            "group_id": None,
+            "shape_type": "rectangle",
+            "flags": {}
+        }
+        labelme_output["shapes"].append(shape)
+        
+    # Oluşturulan tam JSON dosyasını kullanıcıya döndür
+    return jsonify(labelme_output), 200, {
+        'Content-Disposition': f'attachment; filename={image.id}.json',
         'Content-Type': 'application/json'
     }
 
-# === YENİ: ANLIK GÖRÜNTÜ KIRPMA (CROPPING) ROTASI ===
 @app.route('/admin/image_crop/<detection_id>')
 @login_required
 @admin_required
@@ -445,7 +468,6 @@ def admin_image_crop(detection_id):
     det = Detection.query.get_or_404(detection_id)
     img = det.parent_image
     
-    # Kırpılacak ana PNG dosyasının tam yolunu bul
     preview_filename = os.path.basename(img.preview_path)
     preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
     
@@ -453,30 +475,21 @@ def admin_image_crop(detection_id):
         abort(404, "Ana önizleme dosyası bulunamadı.")
 
     try:
-        # Ana PNG dosyasını Pillow ile aç
         with PILImage.open(preview_full_path) as base_img:
-            # LabelMe koordinatlarını al [[x1, y1], [x2, y2]]
             coords = det.coordinates_labelme['points']
-            # Pillow'un crop() fonksiyonu (left, top, right, bottom) formatını bekler
             box = (int(coords[0][0]), int(coords[0][1]), int(coords[1][0]), int(coords[1][1]))
-            
-            # Görüntüyü kırp
             cropped_img = base_img.crop(box)
             
-            # Kırpılmış görüntüyü diske kaydetmek yerine hafızaya (memory buffer) kaydet
             img_io = io.BytesIO()
             cropped_img.save(img_io, 'PNG')
             img_io.seek(0)
             
-            # Hafızadaki bu görüntüyü doğrudan tarayıcıya gönder
             return send_file(img_io, mimetype='image/png')
             
     except Exception as e:
         print(f"Görüntü kırpma hatası (ID: {detection_id}): {e}")
         abort(500, "Görüntü kırpılamadı.")
 
-
-        # === YENİ: ADMİN KULLANICI OLUŞTURMA ROTASI ===
 @app.route('/admin/create_user', methods=['POST'])
 @login_required
 @admin_required
@@ -484,21 +497,17 @@ def admin_create_user():
     username = request.form.get('username')
     password = request.form.get('password')
 
-    # Temel kontroller
     if not username or not password:
         flash('Kullanıcı adı ve şifre alanları zorunludur.', 'danger')
         return redirect(url_for('admin_dashboard'))
 
-    # Kullanıcı adı zaten var mı?
     existing_user = User.query.filter_by(username=username).first()
     if existing_user:
         flash(f"'{username}' kullanıcı adı zaten mevcut. Lütfen başka bir ad seçin.", 'danger')
         return redirect(url_for('admin_dashboard'))
 
-    # Yeni kullanıcıyı oluştur
     try:
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-        # Rolü varsayılan olarak 'uzman' olur (models.py'de tanımlandığı gibi)
         new_user = User(username=username, password=hashed_password, role='uzman')
         db.session.add(new_user)
         db.session.commit()
