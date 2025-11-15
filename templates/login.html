@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Giriş Yap</title>
+    <style>
+        body { font-family: sans-serif; display: grid; place-items: center; min-height: 90vh; background: #f4f4f4; }
+        form { background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        div { margin-bottom: 1rem; }
+        input { width: 300px; padding: 0.5rem; }
+        button { width: 100%; padding: 0.7rem; background: #007bff; color: white; border: none; cursor: pointer; }
+        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
+        .danger { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <form method="POST">
+        <h2>Oosit Değerlendirme Sistemi</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <div>
+            <label>Kullanıcı Adı</label><br>
+            <input type="text" name="username" required>
+        </div>
+        <div>
+            <label>Şifre</label><br>
+            <input type="password" name="password" required>
+        </div>
+        <button type="submit">Giriş Yap</button>
+    </form>
+</body>
+</html>

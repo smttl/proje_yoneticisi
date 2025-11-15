@@ -1,0 +1,8 @@
+flask
+flask-sqlalchemy
+flask-login
+flask-bcrypt
+aicspylibczi     # .czi okuma ve metadata için
+ultralytics      # YOLOv8 için
+Pillow           # Görüntü işleme ve PNG kaydetme için
+numpy

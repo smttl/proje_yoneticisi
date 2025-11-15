@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Değerlendir: {{ image.id }}</title>
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+        #top-bar { padding: 10px; background: #f0f0f0; border-bottom: 1px solid #ccc; }
+        #image-viewer { flex-grow: 1; overflow: auto; background: #333; position: relative; }
+        #image-container { position: relative; width: fit-content; margin: auto; }
+        #oocyte-image { display: block; max-width: 100%; }
+        #drawing-canvas { position: absolute; top: 0; left: 0; cursor: default; }
+        #sidebar {
+            width: 350px; min-width: 350px; background: #f9f9f9;
+            border-left: 1px solid #ccc; overflow-y: auto; padding: 15px;
+        }
+        .tool-btn { padding: 8px 12px; margin-right: 5px; cursor: pointer; }
+        .tool-btn.active { background: #007bff; color: white; }
+        #scoring-panel .detection {
+            margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;
+        }
+        #scoring-panel .detection h3 { margin-top: 0; }
+        #scoring-panel .form-group { margin-bottom: 10px; }
+        #scoring-panel .form-group label { display: block; margin-bottom: 5px; }
+        #scoring-panel .form-group input { width: 80px; padding: 5px; }
+        .status-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ccc; margin-left: 5px; }
+        .status-light.saved { background: #28a745; }
+    </style>
+</head>
+<body>
+
+    <aside id="sidebar">
+        <h2>Değerlendirme</h2>
+        <p><strong>Görüntü:</strong> {{ image.id }}</p>
+        <p><strong>Ölçek:</strong> {{ image.metadata_json.get('scale_um_per_pixel') | round(3) }} µm/pixel</p>
+        <hr>
+        <div id="scoring-panel">
+            </div>
+    </aside>
+
+    <main id="main-content">
+        <div id="top-bar">
+            <a href="{{ url_for('dashboard') }}">&larr; Geri Dön</a> |
+            <strong>Araçlar:</strong>
+            <button id="tool-pan" class="tool-btn active">Gezin (Pan)</button>
+            <button id="tool-ruler" class="tool-btn">Cetvel (Ölç)</button>
+            <span id="ruler-info" style="margin-left: 20px;"></span>
+        </div>
+        <div id="image-viewer">
+            <div id="image-container">
+                <img id="oocyte-image" src="{{ url_for('static', filename=image.preview_path) }}" alt="Oosit Görüntüsü">
+                <canvas id="drawing-canvas"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- Flask'tan Verileri Al ---
+        const detections = {{ detections_json | safe }};
+        const metadata = {{ metadata_json | safe }};
+        const scaleUmPerPixel = metadata.scale_um_per_pixel;
+
+        // --- Global Değişkenler ---
+        let currentTool = 'pan'; // 'pan' veya 'ruler'
+        let isDrawing = false;
+        let rulerStart = {};
+        let rulerEnd = {};
+        
+        // --- Element Referansları ---
+        const img = document.getElementById('oocyte-image');
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoringPanel = document.getElementById('scoring-panel');
+        const rulerInfo = document.getElementById('ruler-info');
+        
+        // --- 1. Başlangıç (Setup) ---
+        window.onload = () => {
+            if (img.complete) {
+                initializeCanvas();
+            } else {
+                img.onload = initializeCanvas;
+            }
+            setupTools();
+            populateScoringPanel();
+        };
+
+        function initializeCanvas() {
+            // Canvas boyutunu resimle eşitle
+            canvas.width = img.clientWidth;
+            canvas.height = img.clientHeight;
+            // Çizimleri yap
+            drawAll();
+        }
+
+        // --- 2. Çizim Fonksiyonları ---
+        function drawAll() {
+            // Görüntü ve canvas boyutları farklılaşmış olabilir (zoom/pan), tekrar eşitle
+            canvas.width = img.clientWidth;
+            canvas.height = img.clientHeight;
+            
+            // Orijinal resim boyutu ile gösterilen (client) boyutu arasındaki oranı bul
+            // Bu, koordinatların doğru ölçeklenmesi için kritik
+            const scaleX = img.clientWidth / img.naturalWidth;
+            const scaleY = img.clientHeight / img.naturalHeight;
+
+            // Önceki çizimleri temizle
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // A. Oosit Tespitlerini (Kutular) Çiz
+            detections.forEach(detection => {
+                const coords = detection.coordinates_labelme.points;
+                // Koordinatları, görüntünün ekrandaki boyutuna göre ölçekle
+                const x1 = coords[0][0] * scaleX;
+                const y1 = coords[0][1] * scaleY;
+                const x2 = coords[1][0] * scaleX;
+                const y2 = coords[1][1] * scaleY;
+                const width = x2 - x1;
+                const height = y2 - y1;
+
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x1, y1, width, height);
+                
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'red';
+                ctx.fillText(detection.id.split('_').pop(), x1, y1 > 10 ? y1 - 5 : y1 + 15);
+            });
+
+            // B. Cetvel Çizimini Yap
+            if (currentTool === 'ruler' && (isDrawing || rulerEnd.x)) {
+                ctx.strokeStyle = '#00f'; // Mavi
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(rulerStart.x, rulerStart.y);
+                ctx.lineTo(rulerEnd.x, rulerEnd.y);
+                ctx.stroke();
+
+                // Uzunluğu Hesapla ve Yaz
+                const { pixelDist, umDist } = calculateDistance(rulerStart, rulerEnd);
+                const text = `${umDist.toFixed(2)} µm`;
+                rulerInfo.textContent = text;
+                
+                ctx.fillStyle = '#00f';
+                ctx.font = '14px Arial';
+                ctx.fillText(text, rulerEnd.x + 5, rulerEnd.y - 5);
+            }
+        }
+        
+        function calculateDistance(start, end) {
+            // 1. Ekranda çizilen piksel mesafesi
+            const canvasPixelDx = end.x - start.x;
+            const canvasPixelDy = end.y - start.y;
+            const canvasPixelDist = Math.sqrt(canvasPixelDx**2 + canvasPixelDy**2);
+            
+            // 2. Bunu orijinal resim piksellerine çevir
+            const scaleX = img.naturalWidth / img.clientWidth;
+            const originalPixelDist = canvasPixelDist * scaleX;
+            
+            // 3. Orijinal pikselleri mikrometreye çevir
+            const umDist = originalPixelDist * scaleUmPerPixel;
+            
+            return { pixelDist: originalPixelDist, umDist: umDist };
+        }
+
+        // --- 3. Araçlar ve Olay Yöneticileri (Event Handlers) ---
+        function setupTools() {
+            document.getElementById('tool-pan').onclick = () => setTool('pan');
+            document.getElementById('tool-ruler').onclick = () => setTool('ruler');
+
+            canvas.onmousedown = (e) => {
+                if (currentTool !== 'ruler') return;
+                isDrawing = true;
+                rulerStart = { x: e.offsetX, y: e.offsetY };
+                rulerEnd = { x: e.offsetX, y: e.offsetY }; // Başlangıçta bitişi sıfırla
+                drawAll();
+            };
+
+            canvas.onmousemove = (e) => {
+                if (currentTool !== 'ruler' || !isDrawing) return;
+                rulerEnd = { x: e.offsetX, y: e.offsetY };
+                drawAll(); // Çizgiyi anlık olarak çiz
+            };
+
+            canvas.onmouseup = (e) => {
+                if (currentTool !== 'ruler') return;
+                isDrawing = false;
+                rulerEnd = { x: e.offsetX, y: e.offsetY };
+                drawAll(); // Son hali çiz
+            };
+            
+            canvas.onmouseleave = () => {
+                isDrawing = false;
+            };
+        }
+        
+        function setTool(tool) {
+            currentTool = tool;
+            document.getElementById('tool-pan').classList.toggle('active', tool === 'pan');
+            document.getElementById('tool-ruler').classList.toggle('active', tool === 'ruler');
+            
+            if (tool === 'pan') {
+                canvas.style.cursor = 'grab';
+                rulerInfo.textContent = ''; // Cetvel bilgisini temizle
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+            drawAll(); // Cetvel çizimini temizlemek için
+        }
+
+        // --- 4. Puanlama Paneli ve Kaydetme ---
+        function populateScoringPanel() {
+            scoringPanel.innerHTML = ''; // Paneli temizle
+            detections.forEach(det => {
+                const scoreForm = document.createElement('div');
+                scoreForm.className = 'detection';
+                scoreForm.id = `score-form-${det.id}`;
+                
+                const scores = det.scores;
+                
+                scoreForm.innerHTML = `
+                    <h3>Oosit: ${det.id} <span id="status-${det.id}" class="status-light"></span></h3>
+                    <div class="form-group">
+                        <label>Sitoplazma Homojenitesi</label>
+                        <input type="number" min="1" max="5" name="sitoplazma" value="${scores.sitoplazma || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Zona Pellucida Yapısı</label>
+                        <input type="number" min="1" max="5" name="zona" value="${scores.zona || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Kumulus Bütünlüğü</label>
+                        <input type="number" min="1" max="5" name="kumulus" value="${scores.kumulus || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Ooplazmik İçerik</label>
+                        <input type="number" min="1" max="5" name="oopla" value="${scores.oopla || ''}">
+                    </div>
+                `;
+                
+                scoringPanel.appendChild(scoreForm);
+                
+                // Kaydetme için 'change' event listener ekle
+                scoreForm.querySelectorAll('input').forEach(input => {
+                    input.onchange = () => saveScores(det.id);
+                });
+            });
+        }
+        
+        async function saveScores(detectionId) {
+            const form = document.getElementById(`score-form-${detectionId}`);
+            const statusLight = document.getElementById(`status-${detectionId}`);
+            
+            const scores = {
+                sitoplazma: form.querySelector('input[name="sitoplazma"]').valueAsNumber || null,
+                zona: form.querySelector('input[name="zona"]').valueAsNumber || null,
+                kumulus: form.querySelector('input[name="kumulus"]').valueAsNumber || null,
+                oopla: form.querySelector('input[name="oopla"]').valueAsNumber || null,
+            };
+            
+            try {
+                const response = await fetch('/api/save_score', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ detection_id: detectionId, scores: scores })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusLight.classList.add('saved'); // Kaydedildi ışığını yak
+                } else {
+                    alert('Hata: ' + result.error);
+                }
+            } catch (error) {
+                alert('Puanlar kaydedilemedi. Sunucu hatası.');
+            }
+        }
+    </script>
+</body>
+</html>

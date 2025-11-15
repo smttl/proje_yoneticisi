@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Ana Panel</title>
+    <style>
+        body { font-family: sans-serif; padding: 2rem; }
+        nav { display: flex; justify-content: space-between; align-items: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .danger { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>Mikroskop Görüntüleri</h1>
+        <span>Hoş geldin, {{ current_user.username }} | <a href="{{ url_for('logout') }}">Çıkış Yap</a></span>
+    </nav>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <h3>Yeni Görüntü Yükle (.czi)</h3>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".czi" required>
+        <button type="submit">Yükle ve İşle</button>
+    </form>
+
+    <h3>Yüklenen Görüntüler</h3>
+    <table>
+        <tr>
+            <th>Görüntü ID</th>
+            <th>Ölçek (µm/pixel)</th>
+            <th>Durum</th>
+        </tr>
+        {% for image in images %}
+        <tr>
+            <td>{{ image.id }}</td>
+            <td>{{ image.metadata_json.get('scale_um_per_pixel', 'N/A') | round(3) }}</td>
+            <td>
+                <a href="{{ url_for('annotate_image', image_id=image.id) }}">Değerlendir</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">Henüz görüntü yüklenmemiş.</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
