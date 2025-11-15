@@ -21,10 +21,22 @@
             display: inline-block; padding: 10px 15px; background: #28a745; 
             color: white; text-decoration: none; border-radius: 4px;
         }
-        /* YENİ: Silme Butonu Stili */
         .btn-delete {
             background: #dc3545; color: white; border: none; 
             padding: 5px 10px; border-radius: 4px; cursor: pointer;
+        }
+        /* YENİ: Yan paneldeki kutu stilleri */
+        .side-box {
+            background: #fff; border: 1px solid #ddd;
+            border-radius: 4px; padding: 15px; margin-top: 20px;
+        }
+        .side-box h2 { margin-top: 0; }
+        .side-box input[type="text"], .side-box input[type="password"] {
+            width: 90%; padding: 8px; margin-bottom: 10px;
+        }
+        .side-box button {
+            width: 100%; padding: 10px; background: #007bff;
+            color: white; border: none; border-radius: 4px; cursor: pointer;
         }
     </style>
 </head>
@@ -56,7 +68,8 @@
                         <th>Yükleyen Uzman</th>
                         <th>Puanlama Detayı</th>
                         <th>Uzmana Ata</th>
-                        <th>Yönet</th> </tr>
+                        <th>Yönet</th>
+                    </tr>
                 </thead>
                 <tbody>
                     {% for image in images %}
@@ -79,7 +92,7 @@
                         </td>
                         <td>
                             <form method="POST" action="{{ url_for('admin_delete_image', image_id=image.id) }}" 
-                                  onsubmit="return confirm('Görüntüyü, tüm puanlarını ve tespitlerini kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.');">
+                                  onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
                                 <button type="submit" class="btn-delete">Sil</button>
                             </form>
                         </td>
@@ -92,13 +105,32 @@
         </div>
 
         <div class="col-side">
-            <h2>İstatistikler</h2>
-            <p>Toplam Uzman: {{ experts|length }}</p>
-            <p>Toplam Görüntü: {{ images|length }}</p>
+            <div class="side-box">
+                <h2>Yeni Uzman Ekle</h2>
+                <form method="POST" action="{{ url_for('admin_create_user') }}">
+                    <div>
+                        <label for="username">Kullanıcı Adı:</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div>
+                        <label for="password">Şifre:</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit">Uzmanı Oluştur</button>
+                </form>
+            </div>
+
+            <div class="side-box">
+                <h2>İstatistikler</h2>
+                <p>Toplam Uzman: {{ experts|length }}</p>
+                <p>Toplam Görüntü: {{ images|length }}</p>
+            </div>
             
-            <h2>Tüm Puanları İndir</h2>
-            <p>Sistemdeki tüm uzmanların verdiği tüm puanları içeren bir Excel (.xlsx) dosyası indirin.</p>
-            <a href="{{ url_for('admin_download_scores') }}" class="btn-download">Excel Olarak İndir</a>
+            <div class="side-box">
+                <h2>Tüm Puanları İndir</h2>
+                <p>Tüm puanları Excel (.xlsx) dosyası olarak indirin.</p>
+                <a href="{{ url_for('admin_download_scores') }}" class="btn-download">Excel Olarak İndir</a>
+            </div>
         </div>
     </div>
 </body>

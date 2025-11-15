@@ -476,5 +476,39 @@ def admin_image_crop(detection_id):
         abort(500, "Görüntü kırpılamadı.")
 
 
+        # === YENİ: ADMİN KULLANICI OLUŞTURMA ROTASI ===
+@app.route('/admin/create_user', methods=['POST'])
+@login_required
+@admin_required
+def admin_create_user():
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    # Temel kontroller
+    if not username or not password:
+        flash('Kullanıcı adı ve şifre alanları zorunludur.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # Kullanıcı adı zaten var mı?
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        flash(f"'{username}' kullanıcı adı zaten mevcut. Lütfen başka bir ad seçin.", 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # Yeni kullanıcıyı oluştur
+    try:
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        # Rolü varsayılan olarak 'uzman' olur (models.py'de tanımlandığı gibi)
+        new_user = User(username=username, password=hashed_password, role='uzman')
+        db.session.add(new_user)
+        db.session.commit()
+        flash(f"Yeni uzman '{username}' başarıyla oluşturuldu.", 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Kullanıcı oluşturulurken bir hata oluştu: {e}", 'danger')
+
+    return redirect(url_for('admin_dashboard'))
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
