@@ -8,8 +8,7 @@ from aicsimageio import AICSImage
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
     Bir .czi dosyasını aicsimageio kullanarak işler.
-    Eğer 3+ kanal varsa, kanalları ayrı ayrı normalize ederek RENKLİ (RGB) PNG oluşturur.
-    Eğer 1 kanal varsa SİYAH BEYAZ (Grayscale) PNG oluşturur.
+    Kanal (C) veya Sahne (S) boyutlarına bakarak RENKLİ (RGB) PNG oluşturur.
     """
     
     try:
@@ -21,8 +20,7 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     print(f"DEBUG: Görüntü ID: {image_id}")
     print(f"DEBUG: Görüntü Boyutları (dims): {img.dims}")
     print(f"DEBUG: Kanal Sayısı (img.dims.C): {img.dims.C}")
-    
-    # === DÜZELTME: 'pixel_type' -> 'dtype' ===
+    print(f"DEBUG: Sahne Sayısı (img.dims.S): {img.dims.S}")
     print(f"DEBUG: Piksel Tipi (dtype): {img.dtype}")
     # ========================================================
 
@@ -44,6 +42,7 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         
         z_slice = img.dims.Z // 2
         num_channels = img.dims.C
+        num_scenes = img.dims.S
         
         def normalize_channel(channel_data):
             """Tek bir 2D kanalı alır ve kontrastı ayarlar (0-255 uint8 döndürür)"""
@@ -62,11 +61,35 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
             return (data * 255).astype(np.uint8)
 
         
-        if num_channels >= 3:
-            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME ===
+        # === DÜZELTME: RENK ALGISI (Önce Sahne, sonra Kanal) ===
+        
+        if num_scenes >= 3 and num_channels == 1:
+            # === RENK (Sahne'den) ===
+            # ZEN'in yaptığı gibi: R, G, B'yi S=0, S=1, S=2'den oku (C=0 iken)
+            print("DEBUG: Renk modu 'Scene' (S:3, C:1) olarak algılandı.")
+            
             img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
 
-            # R, G, B kanallarını AYRI AYRI normalize et
+            # R (S=0), G (S=1), B (S=2) kanallarını AYRI AYRI normalize et
+            img_data_rgb[:, :, 0] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=0)
+            )
+            img_data_rgb[:, :, 1] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=1)
+            )
+            img_data_rgb[:, :, 2] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=2)
+            )
+            
+            pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
+            
+        elif num_channels >= 3:
+            # === RENK (Kanal'dan) ===
+            # Standart RGB (C=0, C=1, C=2)
+            print("DEBUG: Renk modu 'Channel' (C:3) olarak algılandı.")
+            
+            img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
+
             img_data_rgb[:, :, 0] = normalize_channel(
                 img.get_image_data("YX", Z=z_slice, T=0, C=0)
             )
@@ -80,8 +103,9 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
             pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
             
         else:
-            # === SİYAH BEYAZ (Grayscale) GÖRÜNTÜ İŞLEME ===
-            img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0)
+            # === SİYAH BEYAZ (Grayscale) ===
+            print("DEBUG: Mod 'Grayscale' (C:1, S:1) olarak algılandı.")
+            img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0, S=0)
             img_data_normalized = normalize_channel(img_data)
             pil_img = PILImage.fromarray(img_data_normalized, 'L')
 
