@@ -9,6 +9,7 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
     Bir .czi dosyasını aicsimageio kullanarak işler.
     Kanal (C) veya Sahne (S) boyutlarına bakarak RENKLİ (RGB) PNG oluşturur.
+    Kontrast ayarı (p5-p95) ile güncellendi.
     """
     
     try:
@@ -47,21 +48,28 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         def normalize_channel(channel_data):
             """Tek bir 2D kanalı alır ve kontrastı ayarlar (0-255 uint8 döndürür)"""
             data = channel_data.astype(np.float32)
-            p1 = np.percentile(data, 1)
-            p99 = np.percentile(data, 99)
-            data = np.clip(data, p1, p99)
             
-            min_val = np.min(data)
-            max_val = np.max(data)
+            # === KONTRAST DÜZELTMESİ ===
+            # Aşırı parlak/karanlık noktaları (arka plan/çekirdek) göz ardı etmek
+            # ve orta tonlara odaklanmak için %5 ve %95 kullanıyoruz.
+            p5 = np.percentile(data, 5)   # En karanlık %5
+            p95 = np.percentile(data, 95) # En parlak %95
+            # ==========================
+
+            data = np.clip(data, p5, p95) # Görüntüyü bu aralığa kırp
+            
+            min_val = np.min(data) # Artık p5'e eşit
+            max_val = np.max(data) # Artık p95'e eşit
             
             if max_val == min_val:
                 return np.zeros_like(data, dtype=np.uint8)
             
+            # Veriyi 0-255 arasına yay
             data = (data - min_val) / (max_val - min_val)
             return (data * 255).astype(np.uint8)
 
         
-        # === DÜZELTME: RENK ALGISI (Önce Sahne, sonra Kanal) ===
+        # === RENK ALGISI (Önce Sahne, sonra Kanal) ===
         
         if num_scenes >= 3 and num_channels == 1:
             # === RENK (Sahne'den) ===
