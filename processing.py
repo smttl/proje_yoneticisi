@@ -8,7 +8,7 @@ from aicsimageio import AICSImage
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
     Bir .czi dosyasını aicsimageio kullanarak işler.
-    Eğer 3+ kanal varsa RENKLİ (RGB) PNG oluşturur.
+    Eğer 3+ kanal varsa, kanalları ayrı ayrı normalize ederek RENKLİ (RGB) PNG oluşturur.
     Eğer 1 kanal varsa SİYAH BEYAZ (Grayscale) PNG oluşturur.
     """
     
@@ -16,6 +16,13 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         img = AICSImage(czi_path)
     except Exception as e:
         raise ValueError(f"CZI dosyası AICSImageIO ile açılamadı: {e}")
+
+    # === DEBUG: Sunucu konsoluna görüntünün bilgilerini yaz ===
+    print(f"DEBUG: Görüntü ID: {image_id}")
+    print(f"DEBUG: Görüntü Boyutları (dims): {img.dims}")
+    print(f"DEBUG: Kanal Sayısı (img.dims.C): {img.dims.C}")
+    print(f"DEBUG: Piksel Tipi (pixel_type): {img.pixel_type}")
+    # ========================================================
 
     try:
         # --- 1. Metadata ve Ölçek Çıkarımı ---
@@ -31,14 +38,14 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
             'size_bytes': os.path.getsize(czi_path)
         }
 
-        # --- 2. PNG Önizlemesi Oluşturma (RENKLİ / SİYAH BEYAZ) ---
+        # --- 2. PNG Önizlemesi Oluşturma ---
         
         z_slice = img.dims.Z // 2
         num_channels = img.dims.C
         
-        # Görüntüyü normalize etmek için (kontrast ayarı)
-        def normalize_contrast(data):
-            data = data.astype(np.float32)
+        def normalize_channel(channel_data):
+            """Tek bir 2D kanalı alır ve kontrastı ayarlar (0-255 uint8 döndürür)"""
+            data = channel_data.astype(np.float32)
             p1 = np.percentile(data, 1)   # En karanlık %1
             p99 = np.percentile(data, 99) # En parlak %1
             data = np.clip(data, p1, p99) # Aykırı değerleri kırp
@@ -54,28 +61,32 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
 
         
         if num_channels >= 3:
-            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME ===
-            # İlk 3 kanalı (C=0, 1, 2) (3, Y, X) şeklinde oku
-            img_data = img.get_image_data("CYX", Z=z_slice, T=0, C=[0, 1, 2])
+            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME (DÜZELTİLDİ) ===
             
-            # 3 kanalı birlikte normalize et (renk dengesini korumak için)
-            img_data_normalized = normalize_contrast(img_data)
+            # (Y, X, 3) formatında boş bir array oluştur (PIL için)
+            img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
+
+            # HER KANALI (R, G, B) AYRI AYRI OKU VE NORMALIZE ET
+            # Kırmızı Kanal (C=0)
+            img_data_rgb[:, :, 0] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=0)
+            )
+            # Yeşil Kanal (C=1)
+            img_data_rgb[:, :, 1] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=1)
+            )
+            # Mavi Kanal (C=2)
+            img_data_rgb[:, :, 2] = normalize_channel(
+                img.get_image_data("YX", Z=z_slice, T=0, C=2)
+            )
             
-            # (3, Y, X) formatını -> (Y, X, 3) formatına çevir (PIL için)
-            img_data_rgb = np.transpose(img_data_normalized, (1, 2, 0))
-            
-            # 'RGB' modunda renkli olarak kaydet
+            # (Y, X, 3) array'ini RGB resim olarak kaydet
             pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
             
         else:
             # === SİYAH BEYAZ (Grayscale) GÖRÜNTÜ İŞLEME ===
-            # Sadece ilk kanalı (C=0) oku (Y, X) şeklinde
             img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0)
-            
-            # Normalize et (yüksek kontrastlı siyah beyaz)
-            img_data_normalized = normalize_contrast(img_data)
-            
-            # 'L' (Luminance/Grayscale) modunda kaydet
+            img_data_normalized = normalize_channel(img_data)
             pil_img = PILImage.fromarray(img_data_normalized, 'L')
 
     except Exception as e:
@@ -91,7 +102,6 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
 
     # --- 4. YOLOv8 Tespiti ---
     model = YOLO(yolo_model_path)
-    # YOLO'yu renkli (RGB) görüntü üzerinde çalıştır
     results = model.predict(preview_full_path)
     
     detections = []
