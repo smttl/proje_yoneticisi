@@ -161,7 +161,7 @@ def dashboard():
                     )
                     db.session.add(new_detection)
                 db.session.commit()
-                flash(f"Görüntü {image_id} başarıyla yüklendi.", 'success')
+                flash(f"Görüntü {image_id} başarıyla yüklendi ve {len(detections)} oosit bulundu.", 'success')
             except Exception as e:
                 db.session.rollback()
                 if os.path.exists(czi_save_path): os.remove(czi_save_path) 
