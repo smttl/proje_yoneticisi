@@ -1,95 +1,54 @@
 # processing.py
 import numpy as np
 from PIL import Image as PILImage
-from aicspylibczi import CziFile
 from ultralytics import YOLO
 import os
-import xml.etree.ElementTree as ET # XML'i ayrıştırmak için eklendi
 
-def get_scale_from_xml(xml_string):
-    """
-    CZI dosyasının ham XML metadata'sını ayrıştırır ve X ekseni için
-    ölçek bilgisini (metre cinsinden) döndürür.
-    """
-    try:
-        # XML string'ini ayrıştır
-        root = ET.fromstring(xml_string)
-        
-        # Zeiss XML'inde ölçek bilgisinin standart yolu (namespace'leri görmezden gelerek)
-        # Yol: .../Metadata/Scaling/Items/Distance[@Id='X']/Value
-        # '*//' ile namespace'leri atlayarak arama yapıyoruz.
-        
-        # Doğru etiketi bulmak için 'Scaling' etiketini arayalım
-        scaling_node = root.find('.//{*}Scaling')
-        if scaling_node is None:
-            raise ValueError("XML içinde 'Scaling' düğümü bulunamadı.")
-
-        # 'Scaling' içindeki 'Items' içindeki 'Distance' etiketlerini ara
-        for distance in scaling_node.findall('.//{*}Distance'):
-            if distance.get('Id') == 'X':
-                value_node = distance.find('.//{*}Value')
-                if value_node is not None:
-                    scale_meters = float(value_node.text)
-                    if scale_meters == 0:
-                        raise ValueError("XML'de X ölçeği '0' olarak bulundu.")
-                    return scale_meters
-        
-        # Eğer yukarıdaki yol başarısız olursa, alternatif bir yaygın yolu dene
-        # Yol: .../Metadata/Information/Image/Scaling/Distance[@Id='X']/Value
-        alt_scaling_node = root.find('.//{*}Information/{*}Image/{*}Scaling')
-        if alt_scaling_node is not None:
-            for distance in alt_scaling_node.findall('.//{*}Distance'):
-                if distance.get('Id') == 'X':
-                    value_node = distance.find('.//{*}Value')
-                    if value_node is not None:
-                        scale_meters = float(value_node.text)
-                        if scale_meters == 0:
-                            raise ValueError("XML'de (alternatif yol) X ölçeği '0' olarak bulundu.")
-                        return scale_meters
-
-        raise ValueError("XML içinde X ekseni için 'Distance' ölçek bilgisi bulunamadı.")
-        
-    except Exception as e:
-        # XML ayrıştırma hatası
-        raise ValueError(f"XML metadata ayrıştırılamadı: {e}")
-
+# Kütüphaneyi değiştiriyoruz: aicspylibczi -> aicsimageio
+from aicsimageio import AICSImage
 
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
-    Bir .czi dosyasını işler, metadata'yı çıkarır, PNG önizlemesi oluşturur
-    ve YOLOv8 ile oositleri tespit eder.
+    Bir .czi dosyasını aicsimageio kullanarak işler, metadata'yı çıkarır, 
+    PNG önizlemesi oluşturur ve YOLOv8 ile oositleri tespit eder.
     """
     
+    # 1. Görüntüyü AICSImage ile aç
+    # Bu nesne, metadata ve görüntü verisine standart erişim sağlar.
     try:
-        czi = CziFile(czi_path)
+        img = AICSImage(czi_path)
     except Exception as e:
-        raise ValueError(f"CZI dosyası açılamadı veya bozuk: {e}")
+        raise ValueError(f"CZI dosyası AICSImageIO ile açılamadı: {e}")
 
     try:
         # --- 1. Metadata ve Ölçek Çıkarımı ---
         
-        # === DÜZELTME: XML'den Oku ===
-        # Doğrudan öznitelik erişimi başarısız olduğu için ham XML'i ayrıştırıyoruz.
-        raw_xml = czi.raw_metadata
-        if not raw_xml:
-            raise ValueError("Dosyadan ham XML metadata okunamadı.")
-            
-        # XML'den X ölçeğini (metre cinsinden) al
-        scale_x_meters = get_scale_from_xml(raw_xml)
+        # aicsimageio, ölçek bilgisine 'physical_pixel_sizes' ile
+        # doğrudan ve güvenilir bir şekilde erişir.
+        if img.physical_pixel_sizes.X is None:
+            raise ValueError("Metadata içinde fiziksel piksel boyutu (X) bulunamadı.")
+        
+        # Değer metre cinsindendir (örn: 0.0000005)
+        scale_x_meters = img.physical_pixel_sizes.X
         
         # Metreyi mikrometreye (µm) çevir
         scale_um_per_pixel = scale_x_meters * 1_000_000 
         
         metadata = {
             'scale_um_per_pixel': scale_um_per_pixel,
-            'dimensions': czi.dims,
-            'size_bytes': czi.size
+            'dimensions': img.dims.order, # 'TCZYX' gibi
+            'size_bytes': os.path.getsize(czi_path)
         }
 
         # --- 2. PNG Önizlemesi Oluşturma ---
-        img_data, _ = czi.read_image(S=0, T=0, Z=czi.dims_shape[0]['Z']//2, C=0)
-        img_data = img_data[0, 0] # Boyutları sıkıştır (Y, X)
+        # Görüntü verisini numpy dizisi olarak al
+        # Ortadaki Z dilimini, ilk kanalı ve ilk zamanı alıyoruz
+        z_slice = img.dims.Z // 2
         
+        # get_image_data("YX", ...) sadece 2 boyutlu (Y, X) bir dilim döndürür
+        img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0)
+        
+        # Görüntüyü 8-bit'e normalize et (0-255)
         img_data = img_data.astype(np.float32)
         img_min = np.min(img_data)
         img_max = np.max(img_data)
@@ -105,19 +64,17 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     except Exception as e:
         # Hata ne olursa olsun (XML, Görüntü okuma vb.)
         raise e
-    finally:
-        # Hata olsun veya olmasın, CZI dosyasını kapat
-        if 'czi' in locals() and hasattr(czi, 'close'):
-            czi.close()
+    
+    # Not: aicsimageio dosyaları otomatik kapattığı için 'finally' bloğuna gerek yok.
 
-    # --- 3. PNG Kaydetme (CZI dosyası artık kapalı) ---
+    # --- 3. PNG Kaydetme ---
     preview_filename = f"{image_id}.png"
     preview_full_path = os.path.join(preview_folder, preview_filename)
     pil_img.save(preview_full_path)
     
     preview_path_relative = os.path.join(os.path.basename(preview_folder), preview_filename)
 
-    # --- 4. YOLOv8 Tespiti (CZI dosyası artık kapalı) ---
+    # --- 4. YOLOv8 Tespiti ---
     model = YOLO(yolo_model_path)
     results = model.predict(preview_full_path)
     
