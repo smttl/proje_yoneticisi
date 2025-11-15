@@ -69,12 +69,14 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
 
    # --- 3. PNG Kaydetme ---
     preview_filename = f"{image_id}.png"
+    # 'preview_folder' artık '/path/to/project/static/previews'
     preview_full_path = os.path.join(preview_folder, preview_filename)
     pil_img.save(preview_full_path)
     
-    # === DÜZELTME: Web yolları için (Windows/Linux fark etmeksizin) ===
-    # === her zaman düz eğik çizgi (/) kullanmaya zorluyoruz.    ===
-    preview_path_relative = f"{os.path.basename(preview_folder)}/{preview_filename}"
+    # === DÜZELTME: Yolu manuel olarak ve her zaman (/) ile birleştir ===
+    # HTML/url_for için veritabanına kaydedilecek yol
+    # "previews" + "/" + "IMG...png" = "previews/IMG...png"
+    preview_path_relative = f"previews/{preview_filename}"
 
     # --- 4. YOLOv8 Tespiti ---
     model = YOLO(yolo_model_path)

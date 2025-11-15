@@ -1,4 +1,4 @@
-# app.py
+# app.py (Düzeltilmiş Son Hali)
 import os
 import json
 from datetime import datetime
@@ -29,13 +29,17 @@ instance_dir = os.path.join(basedir, 'instance')
 db_path = os.path.join(instance_dir, 'proje.db')
 
 app.config['SECRET_KEY'] = 'COK_GIZLI_BIR_ANAHTAR_12345'
-# YENİ VERİTABANI YOLU (Mutlak yol kullanılıyor)
+# Veritabanı yolu (Mutlak)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}' 
-app.config['UPLOAD_FOLDER'] = 'uploads/'
-app.config['PREVIEW_FOLDER'] = 'static/previews/'
-app.config['ALLOWED_EXTENSIONS'] = {'czi'}
 
-# Kendi eğittiğiniz YOLOv8 modelinizin yolunu buraya girin (Göreli yol)
+# === DÜZELTME: Yolları mutlak (absolute) olarak tanımla ===
+# Bu, 'processing.py'nin dosyaları doğru yerde bulmasını sağlar
+app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
+app.config['PREVIEW_FOLDER'] = os.path.join(basedir, 'static/previews')
+# ==========================================================
+
+app.config['ALLOWED_EXTENSIONS'] = {'czi'}
+# Kendi YOLOv8 modelinizin yolunu buraya girin (Göreli yol)
 app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt' 
 
 # Gerekli klasörleri oluştur (Artık mutlak yolu kullanıyor)
@@ -61,7 +65,6 @@ def init_db_command():
     """Veritabanı tablolarını ve ilk kullanıcıyı oluşturur."""
     db.create_all()
     
-    # İlk kullanıcıyı da burada oluşturalım
     if not User.query.filter_by(username='uzman1').first():
         hashed_password = bcrypt.generate_password_hash('123456').decode('utf-8')
         new_user = User(username='uzman1', password=hashed_password)
@@ -76,6 +79,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 # --- KULLANICI GİRİŞ/ÇIKIŞ SAYFALARI ---
+# Hem ana sayfa hem de /login yolu için GET ve POST metodlarını kabul et
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -113,30 +117,32 @@ def dashboard():
         
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            # Benzersiz ID oluştur (örn: IMG_20251114103015)
             image_id = f"IMG_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            # czi_save_path artık mutlak bir yol (örn: /home/user/proje/uploads/IMG_123.czi)
             czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{image_id}.czi")
             file.save(czi_save_path)
             
             try:
-                # --- AĞIR İŞLEM BURADA BAŞLIYOR ---
+                # process_czi_image fonksiyonuna mutlak yolları gönderiyoruz
                 metadata, preview_path, detections = process_czi_image(
                     czi_save_path,
                     image_id,
-                    app.config['PREVIEW_FOLDER'],
+                    app.config['PREVIEW_FOLDER'], # Mutlak yol
                     app.config['YOLO_MODEL_PATH']
                 )
-                # --- VERİTABANI KAYDI ---
-                # 1. Ana Görüntü
+                
+                # preview_path'ın "previews/IMG_123.png" formatında 
+                # (göreceli ve / ile) geldiğini varsayıyoruz (processing.py düzeltmesi)
+                
                 new_image = Image(
                     id=image_id,
                     file_path=czi_save_path,
-                    preview_path=preview_path,
+                    preview_path=preview_path, # DB'ye "previews/IMG_123.png" olarak kaydedilir
                     metadata_json=metadata
                 )
                 db.session.add(new_image)
                 
-                # 2. Tespit Edilen Oositler
                 for det_data in detections:
                     new_detection = Detection(
                         id=det_data['id'],
@@ -147,9 +153,25 @@ def dashboard():
                 
                 db.session.commit()
                 flash(f"Görüntü {image_id} başarıyla yüklendi ve {len(detections)} oosit bulundu.", 'success')
+            
             except Exception as e:
                 db.session.rollback()
-                os.remove(czi_save_path) # Hata olursa yüklenen dosyayı sil
+                # Hata durumunda CZI dosyasını sil
+                if os.path.exists(czi_save_path):
+                    os.remove(czi_save_path) 
+                
+                # Önizleme PNG'si oluşturulduysa onu da sil
+                # (processing.py'deki son düzeltmeye göre preview_path'ın nasıl geldiğini varsayıyoruz)
+                try:
+                    # processing.py'nin 'previews/IMG.png' döndürdüğünü varsayarak
+                    # 'static/' ile birleştirip mutlak yolunu buluyoruz
+                    error_preview_path_rel = f"previews/{image_id}.png"
+                    error_preview_path_abs = os.path.join(basedir, 'static', error_preview_path_rel)
+                    if os.path.exists(error_preview_path_abs):
+                        os.remove(error_preview_path_abs)
+                except:
+                    pass # Silme işlemi de hata verirse görmezden gel
+
                 flash(f"Görüntü işlenemedi: {e}", 'danger')
                 
             return redirect(url_for('dashboard'))
@@ -163,7 +185,6 @@ def dashboard():
 def annotate_image(image_id):
     image = Image.query.get_or_404(image_id)
     
-    # Tüm tespitleri ve mevcut uzmanın mevcut puanlarını çek
     detections_query = db.session.query(
         Detection, Score
     ).outerjoin(
@@ -188,7 +209,7 @@ def annotate_image(image_id):
 
     return render_template(
         'annotate.html', 
-        image=image, 
+        image=image, # image.preview_path = "previews/IMG_123.png"
         detections_json=json.dumps(detections_data),
         metadata_json=json.dumps(image.metadata_json)
     )
@@ -203,7 +224,6 @@ def save_score():
     if not detection_id or not scores:
         return jsonify({'success': False, 'error': 'Eksik veri'}), 400
 
-    # Skoru bul veya oluştur
     score_obj = Score.query.filter_by(
         detection_id=detection_id, 
         user_id=current_user.id
@@ -213,7 +233,6 @@ def save_score():
         score_obj = Score(detection_id=detection_id, user_id=current_user.id)
         db.session.add(score_obj)
 
-    # Puanları güncelle
     score_obj.score_sitoplazma = scores.get('sitoplazma')
     score_obj.score_zona = scores.get('zona')
     score_obj.score_kumulus = scores.get('kumulus')
@@ -228,4 +247,6 @@ def save_score():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Debian'da dışarıdan erişim için 'host=0.0.0.0' eklemeyi unutmayın
+    # 'flask run' kullanıyorsanız: flask run --host=0.0.0.0
+    app.run(debug=True, host='0.0.0.0')
