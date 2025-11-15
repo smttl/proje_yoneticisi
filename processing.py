@@ -4,6 +4,55 @@ from PIL import Image as PILImage
 from aicspylibczi import CziFile
 from ultralytics import YOLO
 import os
+import xml.etree.ElementTree as ET # XML'i ayrıştırmak için eklendi
+
+def get_scale_from_xml(xml_string):
+    """
+    CZI dosyasının ham XML metadata'sını ayrıştırır ve X ekseni için
+    ölçek bilgisini (metre cinsinden) döndürür.
+    """
+    try:
+        # XML string'ini ayrıştır
+        root = ET.fromstring(xml_string)
+        
+        # Zeiss XML'inde ölçek bilgisinin standart yolu (namespace'leri görmezden gelerek)
+        # Yol: .../Metadata/Scaling/Items/Distance[@Id='X']/Value
+        # '*//' ile namespace'leri atlayarak arama yapıyoruz.
+        
+        # Doğru etiketi bulmak için 'Scaling' etiketini arayalım
+        scaling_node = root.find('.//{*}Scaling')
+        if scaling_node is None:
+            raise ValueError("XML içinde 'Scaling' düğümü bulunamadı.")
+
+        # 'Scaling' içindeki 'Items' içindeki 'Distance' etiketlerini ara
+        for distance in scaling_node.findall('.//{*}Distance'):
+            if distance.get('Id') == 'X':
+                value_node = distance.find('.//{*}Value')
+                if value_node is not None:
+                    scale_meters = float(value_node.text)
+                    if scale_meters == 0:
+                        raise ValueError("XML'de X ölçeği '0' olarak bulundu.")
+                    return scale_meters
+        
+        # Eğer yukarıdaki yol başarısız olursa, alternatif bir yaygın yolu dene
+        # Yol: .../Metadata/Information/Image/Scaling/Distance[@Id='X']/Value
+        alt_scaling_node = root.find('.//{*}Information/{*}Image/{*}Scaling')
+        if alt_scaling_node is not None:
+            for distance in alt_scaling_node.findall('.//{*}Distance'):
+                if distance.get('Id') == 'X':
+                    value_node = distance.find('.//{*}Value')
+                    if value_node is not None:
+                        scale_meters = float(value_node.text)
+                        if scale_meters == 0:
+                            raise ValueError("XML'de (alternatif yol) X ölçeği '0' olarak bulundu.")
+                        return scale_meters
+
+        raise ValueError("XML içinde X ekseni için 'Distance' ölçek bilgisi bulunamadı.")
+        
+    except Exception as e:
+        # XML ayrıştırma hatası
+        raise ValueError(f"XML metadata ayrıştırılamadı: {e}")
+
 
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
@@ -18,25 +67,18 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
 
     try:
         # --- 1. Metadata ve Ölçek Çıkarımı ---
-        dims_str = czi.dims
         
-        # === DÜZELTME BURADA ===
-        # Özelliğin doğru adı '.scale' değil, '.pixel_sizes'
-        scale_tuple = czi.pixel_sizes
-        # =======================
-        
-        # 'X' (genişlik) boyutunun dizedeki indeksini bul
-        x_index = dims_str.find('X')
-        if x_index == -1:
-            raise ValueError("CZI metadata içinde 'X' boyutu bulunamadı.")
-        
-        # Ölçek bilgisini al (metre cinsinden)
-        scale_x = scale_tuple[x_index]
-        if scale_x is None or scale_x == 0:
-            raise ValueError("CZI metadata içinde X ölçeği okunamadı (değer 'None' veya 0).")
+        # === DÜZELTME: XML'den Oku ===
+        # Doğrudan öznitelik erişimi başarısız olduğu için ham XML'i ayrıştırıyoruz.
+        raw_xml = czi.raw_metadata
+        if not raw_xml:
+            raise ValueError("Dosyadan ham XML metadata okunamadı.")
             
+        # XML'den X ölçeğini (metre cinsinden) al
+        scale_x_meters = get_scale_from_xml(raw_xml)
+        
         # Metreyi mikrometreye (µm) çevir
-        scale_um_per_pixel = scale_x * 1_000_000 
+        scale_um_per_pixel = scale_x_meters * 1_000_000 
         
         metadata = {
             'scale_um_per_pixel': scale_um_per_pixel,
@@ -61,6 +103,7 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         pil_img = PILImage.fromarray(img_data)
 
     except Exception as e:
+        # Hata ne olursa olsun (XML, Görüntü okuma vb.)
         raise e
     finally:
         # Hata olsun veya olmasın, CZI dosyasını kapat
