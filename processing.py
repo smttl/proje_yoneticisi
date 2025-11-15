@@ -67,12 +67,14 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     
     # Not: aicsimageio dosyaları otomatik kapattığı için 'finally' bloğuna gerek yok.
 
-    # --- 3. PNG Kaydetme ---
+   # --- 3. PNG Kaydetme ---
     preview_filename = f"{image_id}.png"
     preview_full_path = os.path.join(preview_folder, preview_filename)
     pil_img.save(preview_full_path)
     
-    preview_path_relative = os.path.join(os.path.basename(preview_folder), preview_filename)
+    # === DÜZELTME: Web yolları için (Windows/Linux fark etmeksizin) ===
+    # === her zaman düz eğik çizgi (/) kullanmaya zorluyoruz.    ===
+    preview_path_relative = f"{os.path.basename(preview_folder)}/{preview_filename}"
 
     # --- 4. YOLOv8 Tespiti ---
     model = YOLO(yolo_model_path)
