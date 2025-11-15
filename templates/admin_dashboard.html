@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Paneli</title>
+    <style>
+        body { font-family: sans-serif; padding: 2rem; }
+        nav { display: flex; justify-content: space-between; align-items: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .danger { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .container { display: flex; gap: 2rem; }
+        .col-main { flex-grow: 1; }
+        .col-side { width: 300px; flex-shrink: 0; }
+        .assignment-form { margin-top: 10px; }
+        .btn-download {
+            display: inline-block; padding: 10px 15px; background: #28a745; 
+            color: white; text-decoration: none; border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>Admin Paneli</h1>
+        <span>
+            Hoş geldin, {{ current_user.username }} (Admin) | 
+            <a href="{{ url_for('dashboard') }}">Uzman Paneline Git</a> | 
+            <a href="{{ url_for('logout') }}">Çıkış Yap</a>
+        </span>
+    </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="container">
+        <div class="col-main">
+            <h2>Tüm Görüntüler (Toplam: {{ images|length }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Görüntü ID</th>
+                        <th>Yükleyen Uzman</th>
+                        <th>Puanlama Detayı</th>
+                        <th>Uzmana Ata</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for image in images %}
+                    <tr>
+                        <td>{{ image.id }}</td>
+                        <td>{{ image.uploader.username if image.uploader else 'Admin/Bilinmiyor' }}</td>
+                        <td>
+                            <a href="{{ url_for('admin_image_detail', image_id=image.id) }}">Puanları Gör</a>
+                        </td>
+                        <td>
+                            <form class="assignment-form" method="POST" action="{{ url_for('admin_assign_image', image_id=image.id) }}">
+                                <select name="expert_id" required>
+                                    <option value="" disabled selected>Uzman Seç...</option>
+                                    {% for expert in experts %}
+                                    <option value="{{ expert.id }}">{{ expert.username }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Ata</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">Sistemde hiç görüntü yok.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="col-side">
+            <h2>İstatistikler</h2>
+            <p>Toplam Uzman: {{ experts|length }}</p>
+            <p>Toplam Görüntü: {{ images|length }}</p>
+            
+            <h2>Tüm Puanları İndir</h2>
+            <p>Sistemdeki tüm uzmanların verdiği tüm puanları içeren bir Excel (.xlsx) dosyası indirin.</p>
+            <a href="{{ url_for('admin_download_scores') }}" class="btn-download">Excel Olarak İndir</a>
+        </div>
+    </div>
+</body>
+</html>

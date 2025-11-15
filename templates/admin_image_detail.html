@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Puan Detayı: {{ image.id }}</title>
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #image-viewer { 
+            flex-grow: 1; overflow: auto; background: #333; 
+            padding: 20px; text-align: center; 
+        }
+        #image-viewer img { max-width: 90%; max-height: 50vh; border: 2px solid #fff; }
+        #sidebar {
+            width: 450px; min-width: 450px; background: #f9f9f9;
+            border-left: 1px solid #ccc; overflow-y: auto; padding: 15px;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <aside id="sidebar">
+        <h2>Puanlama Detayları</h2>
+        <p><a href="{{ url_for('admin_dashboard') }}">&larr; Admin Paneline Dön</a></p>
+        <p><strong>Görüntü:</strong> {{ image.id }}</p>
+        <p><strong>Yükleyen:</strong> {{ image.uploader.username if image.uploader else 'Bilinmiyor' }}</p>
+        <hr>
+        <h3>Uzman Puanları (Karşılaştırmalı)</h3>
+        
+        {% for detection in image.detections %}
+        <h4>Oosit: {{ detection.id.split('_')[-1] }}</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Uzman</th>
+                    <th>Sitoplazma</th>
+                    <th>Zona</th>
+                    <th>Kumulus</th>
+                    <th>Oopla</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set scores_found = namespace(count=0) %}
+                {% for score in detection.scores %}
+                    <tr>
+                        <td><strong>{{ score.user.username }}</strong></td>
+                        <td>{{ score.score_sitoplazma | default('N/A', true) }}</td>
+                        <td>{{ score.score_zona | default('N/A', true) }}</td>
+                        <td>{{ score.score_kumulus | default('N/A', true) }}</td>
+                        <td>{{ score.score_oopla | default('N/A', true) }}</td>
+                    </tr>
+                    {% set scores_found.count = scores_found.count + 1 %}
+                {% endfor %}
+                
+                {% if scores_found.count == 0 %}
+                <tr><td colspan="5">Bu oosit henüz puanlanmamış.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>Bu görüntüde (YOLOv8) oosit tespiti bulunamadı.</p>
+        {% endfor %}
+    </aside>
+
+    <main id="image-viewer">
+        <img src="{{ url_for('static', filename=image.preview_path) }}" alt="Oosit Görüntüsü">
+    </main>
+</body>
+</html>

@@ -12,12 +12,19 @@
         .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
         .success { background: #d4edda; color: #155724; }
         .danger { background: #f8d7da; color: #721c24; }
+        h2 { border-bottom: 2px solid #007bff; padding-bottom: 5px; margin-top: 30px; }
     </style>
 </head>
 <body>
     <nav>
-        <h1>Mikroskop Görüntüleri</h1>
-        <span>Hoş geldin, {{ current_user.username }} | <a href="{{ url_for('logout') }}">Çıkış Yap</a></span>
+        <h1>Uzman Paneli</h1>
+        <span>
+            Hoş geldin, {{ current_user.username }} | 
+            {% if current_user.role == 'admin' %}
+                <a href="{{ url_for('admin_dashboard') }}"><strong>Admin Paneli</strong></a> |
+            {% endif %}
+            <a href="{{ url_for('logout') }}">Çıkış Yap</a>
+        </span>
     </nav>
     
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -34,24 +41,46 @@
         <button type="submit">Yükle ve İşle</button>
     </form>
 
-    <h3>Yüklenen Görüntüler</h3>
+    <h2>Yüklediğim Görüntüler ({{ uploaded_images|length }})</h2>
     <table>
         <tr>
             <th>Görüntü ID</th>
             <th>Ölçek (µm/pixel)</th>
             <th>Durum</th>
         </tr>
-        {% for image in images %}
+        {% for image in uploaded_images %}
         <tr>
             <td>{{ image.id }}</td>
             <td>{{ image.metadata_json.get('scale_um_per_pixel', 'N/A') | round(3) }}</td>
             <td>
-                <a href="{{ url_for('annotate_image', image_id=image.id) }}">Değerlendir</a>
+                <a href="{{ url_for('annotate_image', image_id=image.id) }}">Puanla / Değerlendir</a>
             </td>
         </tr>
         {% else %}
         <tr>
-            <td colspan="3">Henüz görüntü yüklenmemiş.</td>
+            <td colspan="3">Henüz görüntü yüklemediniz.</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Bana Atanan Görüntüler ({{ assigned_images|length }})</h2>
+    <table>
+        <tr>
+            <th>Görüntü ID</th>
+            <th>Yükleyen</th>
+            <th>Durum</th>
+        </tr>
+        {% for image in assigned_images %}
+        <tr>
+            <td>{{ image.id }}</td>
+            <td>{{ image.uploader.username if image.uploader else 'Bilinmiyor' }}</td>
+            <td>
+                <a href="{{ url_for('annotate_image', image_id=image.id) }}">Puanla / Değerlendir</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">Size atanmış bir görüntü yok.</td>
         </tr>
         {% endfor %}
     </table>
