@@ -1,9 +1,9 @@
-# app.py (Düzeltilmiş Son Hali)
+# app.py (İsimlendirme Düzeltmesi Yapılmış)
 import os
 import json
 from datetime import datetime
 from flask import (
-    Flask, render_template, request, redirect, url_for, flash, abort, 
+    Flask, render_template, request, redirect, url_for, flash, abort,
     jsonify, session
 )
 from flask_sqlalchemy import SQLAlchemy
@@ -30,20 +30,19 @@ db_path = os.path.join(instance_dir, 'proje.db')
 
 app.config['SECRET_KEY'] = 'COK_GIZLI_BIR_ANAHTAR_12345'
 # Veritabanı yolu (Mutlak)
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}' 
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
 # === DÜZELTME: Yolları mutlak (absolute) olarak tanımla ===
-# Bu, 'processing.py'nin dosyaları doğru yerde bulmasını sağlar
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['PREVIEW_FOLDER'] = os.path.join(basedir, 'static/previews')
 # ==========================================================
 
 app.config['ALLOWED_EXTENSIONS'] = {'czi'}
 # Kendi YOLOv8 modelinizin yolunu buraya girin (Göreli yol)
-app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt' 
+app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt'
 
 # Gerekli klasörleri oluştur (Artık mutlak yolu kullanıyor)
-os.makedirs(instance_dir, exist_ok=True) 
+os.makedirs(instance_dir, exist_ok=True)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PREVIEW_FOLDER'], exist_ok=True)
 
@@ -64,7 +63,7 @@ def load_user(user_id):
 def init_db_command():
     """Veritabanı tablolarını ve ilk kullanıcıyı oluşturur."""
     db.create_all()
-    
+
     if not User.query.filter_by(username='uzman1').first():
         hashed_password = bcrypt.generate_password_hash('123456').decode('utf-8')
         new_user = User(username='uzman1', password=hashed_password)
@@ -114,35 +113,50 @@ def dashboard():
         if file.filename == '':
             flash('Dosya seçilmedi', 'danger')
             return redirect(request.url)
-        
+
         if file and allowed_file(file.filename):
+            
+            # === İSİMLENDİRME GÜNCELLEMESİ ===
+            # 1. Orijinal adı al ve güvenli hale getir
             filename = secure_filename(file.filename)
-            image_id = f"IMG_{datetime.now().strftime('%Y%m%d%H%M%S')}"
             
-            # czi_save_path artık mutlak bir yol (örn: /home/user/proje/uploads/IMG_123.czi)
-            czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{image_id}.czi")
+            # 2. Dosya adını ve uzantısını ayır
+            base_name, file_extension = os.path.splitext(filename)
+            
+            # 3. Benzersiz bir zaman damgası oluştur
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            
+            # 4. YENİ ID: Orijinal ad + zaman damgası (örn: "Deneme_1_20251115203000")
+            image_id = f"{base_name}_{timestamp}"
+            
+            # 5. Sunucuya kaydedilecek tam dosya adı (örn: "Deneme_1_20251115203000.czi")
+            czi_filename_on_server = f"{image_id}{file_extension}"
+            
+            # 6. Dosyayı kaydet
+            czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], czi_filename_on_server)
             file.save(czi_save_path)
-            
+            # === İSİMLENDİRME SONU ===
+
             try:
                 # process_czi_image fonksiyonuna mutlak yolları gönderiyoruz
                 metadata, preview_path, detections = process_czi_image(
                     czi_save_path,
-                    image_id,
+                    image_id, # (Artık yeni formatta, örn: "Deneme_1_20251115203000")
                     app.config['PREVIEW_FOLDER'], # Mutlak yol
                     app.config['YOLO_MODEL_PATH']
                 )
-                
-                # preview_path'ın "previews/IMG_123.png" formatında 
+
+                # preview_path'ın "previews/YENI_ID.png" formatında 
                 # (göreceli ve / ile) geldiğini varsayıyoruz (processing.py düzeltmesi)
                 
                 new_image = Image(
                     id=image_id,
                     file_path=czi_save_path,
-                    preview_path=preview_path, # DB'ye "previews/IMG_123.png" olarak kaydedilir
+                    preview_path=preview_path, # DB'ye "previews/Deneme_1_....png" olarak kaydedilir
                     metadata_json=metadata
                 )
                 db.session.add(new_image)
-                
+
                 for det_data in detections:
                     new_detection = Detection(
                         id=det_data['id'],
@@ -150,20 +164,19 @@ def dashboard():
                         coordinates_labelme=det_data['coordinates_labelme']
                     )
                     db.session.add(new_detection)
-                
+
                 db.session.commit()
                 flash(f"Görüntü {image_id} başarıyla yüklendi ve {len(detections)} oosit bulundu.", 'success')
-            
+
             except Exception as e:
                 db.session.rollback()
                 # Hata durumunda CZI dosyasını sil
                 if os.path.exists(czi_save_path):
-                    os.remove(czi_save_path) 
-                
+                    os.remove(czi_save_path)
+
                 # Önizleme PNG'si oluşturulduysa onu da sil
-                # (processing.py'deki son düzeltmeye göre preview_path'ın nasıl geldiğini varsayıyoruz)
                 try:
-                    # processing.py'nin 'previews/IMG.png' döndürdüğünü varsayarak
+                    # 'processing.py'nin 'previews/image_id.png' döndürdüğünü varsayarak
                     # 'static/' ile birleştirip mutlak yolunu buluyoruz
                     error_preview_path_rel = f"previews/{image_id}.png"
                     error_preview_path_abs = os.path.join(basedir, 'static', error_preview_path_rel)
@@ -173,7 +186,7 @@ def dashboard():
                     pass # Silme işlemi de hata verirse görmezden gel
 
                 flash(f"Görüntü işlenemedi: {e}", 'danger')
-                
+
             return redirect(url_for('dashboard'))
 
     # GET isteği (sayfa yüklendiğinde)
@@ -184,16 +197,16 @@ def dashboard():
 @login_required
 def annotate_image(image_id):
     image = Image.query.get_or_404(image_id)
-    
+
     detections_query = db.session.query(
         Detection, Score
     ).outerjoin(
-        Score, 
+        Score,
         (Score.detection_id == Detection.id) & (Score.user_id == current_user.id)
     ).filter(
         Detection.parent_image_id == image_id
     ).all()
-    
+
     detections_data = []
     for det, score in detections_query:
         detections_data.append({
@@ -208,8 +221,8 @@ def annotate_image(image_id):
         })
 
     return render_template(
-        'annotate.html', 
-        image=image, # image.preview_path = "previews/IMG_123.png"
+        'annotate.html',
+        image=image, # image.preview_path = "previews/Deneme_1_....png"
         detections_json=json.dumps(detections_data),
         metadata_json=json.dumps(image.metadata_json)
     )
@@ -225,10 +238,10 @@ def save_score():
         return jsonify({'success': False, 'error': 'Eksik veri'}), 400
 
     score_obj = Score.query.filter_by(
-        detection_id=detection_id, 
+        detection_id=detection_id,
         user_id=current_user.id
     ).first()
-    
+
     if not score_obj:
         score_obj = Score(detection_id=detection_id, user_id=current_user.id)
         db.session.add(score_obj)
