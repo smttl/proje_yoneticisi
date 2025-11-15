@@ -4,37 +4,55 @@ from PIL import Image as PILImage
 from ultralytics import YOLO
 import os
 from aicsimageio import AICSImage
-import xml.etree.ElementTree as ET # XML okumak için eklendi
+import xml.etree.ElementTree as ET # XML okumak için
 
 def get_objective_name_from_xml(xml_root):
     """
     AICSImage metadata (XML root) içinden objektif adını bulmaya çalışır.
     """
-    if xml_root is None:
-        return "Bilinmiyor"
-    
+    if xml_root is None: return "Bilinmiyor"
     try:
         # Zeiss XML'inde objektif adı için en yaygın yolu dene
-        # Yol: .../Metadata/Information/Instrument/Objectives/Objective
         objective_node = xml_root.find(".//{*}Information/{*}Instrument/{*}Objectives/{*}Objective")
-        
         if objective_node is not None and 'Name' in objective_node.attrib:
             return objective_node.attrib['Name'] # örn: "Plan-Apochromat 20x/0.8"
 
-        # Başka bir yaygın yolu dene (daha basit)
         objective_node = xml_root.find(".//{*}Objective")
         if objective_node is not None and 'Name' in objective_node.attrib:
             return objective_node.attrib['Name']
-
         return "Bilinmiyor"
     except Exception as e:
         print(f"DEBUG: Objektif XML okuma hatası: {e}")
         return "XML Hatası"
 
+# === YENİ: Çekim Tarihini XML'den Okuma Fonksiyonu ===
+def get_acquisition_date_from_xml(xml_root):
+    """
+    AICSImage metadata (XML root) içinden çekim tarihini bulmaya çalışır.
+    """
+    if xml_root is None: return "Bilinmiyor"
+    try:
+        # Zeiss XML'inde en yaygın yolu dene
+        # Yol: .../Metadata/Information/Image/AcquisitionDateAndTime
+        date_node = xml_root.find(".//{*}Information/{*}Image/{*}AcquisitionDateAndTime")
+        if date_node is not None:
+            # Tarihi (örn: "2025-11-15T20:30:00.000") al ve sadece tarih kısmını (T'den öncesi) döndür
+            return date_node.text.split('T')[0] 
+
+        # Başka bir yaygın yolu dene
+        date_node = xml_root.find(".//{*}AcquisitionDateAndTime")
+        if date_node is not None:
+            return date_node.text.split('T')[0]
+
+        return "Bilinmiyor"
+    except Exception as e:
+        print(f"DEBUG: Çekim Tarihi XML okuma hatası: {e}")
+        return "XML Hatası"
+
 
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
-    Tüm metadata'ları (Çekim Tarihi, Objektif) okuyacak şekilde güncellendi.
+    Tüm metadata'ları (Çekim Tarihi, Objektif) XML'den okuyacak şekilde güncellendi.
     """
     
     try:
@@ -56,19 +74,21 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         scale_x_meters = img.physical_pixel_sizes.X
         scale_um_per_pixel = scale_x_meters * 1_000_000 
         
-        # 1b. YENİ: Diğer Metadata'lar
-        acquisition_date = str(img.acquisition_date) # Çekim Tarihi
+        # 1b. Diğer Metadata'lar
         channel_names = img.channel_names          # Kanal İsimleri (Liste)
-        xml_root = img.metadata                    # Ham XML verisi
-        objective_name = get_objective_name_from_xml(xml_root) # Objektif Adı
+        xml_root = img.metadata                    # Ham XML verisi (XML Element objesi)
+        
+        # === DÜZELTME: Verileri XML'den Çek ===
+        objective_name = get_objective_name_from_xml(xml_root)
+        acquisition_date = get_acquisition_date_from_xml(xml_root)
 
         metadata = {
             'scale_um_per_pixel': scale_um_per_pixel,
             'dimensions': img.dims.order,
             'size_bytes': os.path.getsize(czi_path),
-            'acquisition_date': acquisition_date, # YENİ
-            'channel_names': channel_names,       # YENİ
-            'objective_name': objective_name        # YENİ
+            'acquisition_date': acquisition_date, # DÜZELTİLDİ
+            'channel_names': channel_names,
+            'objective_name': objective_name
         }
 
         # --- 2. PNG Önizlemesi Oluşturma ---
