@@ -21,7 +21,9 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     print(f"DEBUG: Görüntü ID: {image_id}")
     print(f"DEBUG: Görüntü Boyutları (dims): {img.dims}")
     print(f"DEBUG: Kanal Sayısı (img.dims.C): {img.dims.C}")
-    print(f"DEBUG: Piksel Tipi (pixel_type): {img.pixel_type}")
+    
+    # === DÜZELTME: 'pixel_type' -> 'dtype' ===
+    print(f"DEBUG: Piksel Tipi (dtype): {img.dtype}")
     # ========================================================
 
     try:
@@ -46,9 +48,9 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         def normalize_channel(channel_data):
             """Tek bir 2D kanalı alır ve kontrastı ayarlar (0-255 uint8 döndürür)"""
             data = channel_data.astype(np.float32)
-            p1 = np.percentile(data, 1)   # En karanlık %1
-            p99 = np.percentile(data, 99) # En parlak %1
-            data = np.clip(data, p1, p99) # Aykırı değerleri kırp
+            p1 = np.percentile(data, 1)
+            p99 = np.percentile(data, 99)
+            data = np.clip(data, p1, p99)
             
             min_val = np.min(data)
             max_val = np.max(data)
@@ -56,31 +58,25 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
             if max_val == min_val:
                 return np.zeros_like(data, dtype=np.uint8)
             
-            data = (data - min_val) / (max_val - min_val) # 0-1 arasına yay
+            data = (data - min_val) / (max_val - min_val)
             return (data * 255).astype(np.uint8)
 
         
         if num_channels >= 3:
-            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME (DÜZELTİLDİ) ===
-            
-            # (Y, X, 3) formatında boş bir array oluştur (PIL için)
+            # === RENKLİ (RGB) GÖRÜNTÜ İŞLEME ===
             img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
 
-            # HER KANALI (R, G, B) AYRI AYRI OKU VE NORMALIZE ET
-            # Kırmızı Kanal (C=0)
+            # R, G, B kanallarını AYRI AYRI normalize et
             img_data_rgb[:, :, 0] = normalize_channel(
                 img.get_image_data("YX", Z=z_slice, T=0, C=0)
             )
-            # Yeşil Kanal (C=1)
             img_data_rgb[:, :, 1] = normalize_channel(
                 img.get_image_data("YX", Z=z_slice, T=0, C=1)
             )
-            # Mavi Kanal (C=2)
             img_data_rgb[:, :, 2] = normalize_channel(
                 img.get_image_data("YX", Z=z_slice, T=0, C=2)
             )
             
-            # (Y, X, 3) array'ini RGB resim olarak kaydet
             pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
             
         else:
