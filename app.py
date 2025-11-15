@@ -7,7 +7,7 @@ from flask import (
     jsonify, session, send_file, send_from_directory
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func # İstatistikler için eklendi
+from sqlalchemy import func
 from flask_login import (
     LoginManager, login_user, logout_user, login_required, current_user
 )
@@ -37,7 +37,8 @@ app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt'
 os.makedirs(instance_dir, exist_ok=True) 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PREVIEW_FOLDER'], exist_ok=True)
-# ... (Eklenti başlatma kodlarınız aynı kalıyor) ...
+
+# --- EKLENTİLERİ BAŞLATMA ---
 db.init_app(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
@@ -52,7 +53,7 @@ def load_user(user_id):
 # --- VERİTABANINI OLUŞTURMAK İÇİN ÖZEL KOMUT ---
 @app.cli.command("init-db")
 def init_db_command():
-    """Veritabanı tablolarını ve ilk kullanıcıları oluşturur."""
+    # ... (init-db kodunuz aynı kalıyor) ...
     db.create_all()
     if not User.query.filter_by(username='uzman1').first():
         hashed_password = bcrypt.generate_password_hash('123456').decode('utf-8')
@@ -85,13 +86,13 @@ def allowed_file(filename):
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # ... (login kodunuz aynı kalıyor) ...
     if current_user.is_authenticated:
         if current_user.role == 'admin':
             return redirect(url_for('admin_dashboard'))
         else:
             return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        # ... (login mantığınız aynı) ...
         username = request.form.get('username')
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
@@ -115,7 +116,7 @@ def logout():
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
-    # ... (Uzman dashboard kodunuzun tamamı aynı kalıyor) ...
+    # ... (dashboard kodunuz aynı kalıyor) ...
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('Dosya kısmı yok', 'danger')
@@ -185,8 +186,9 @@ def dashboard():
 @app.route('/annotate/<image_id>')
 @login_required
 def annotate_image(image_id):
-    # ... (annotate_image rotanız aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
+    
+    # GÜNCELLEME: 'grade' (A/B/C/D) verisini de çek
     detections_query = db.session.query(
         Detection, Score
     ).outerjoin(
@@ -195,18 +197,21 @@ def annotate_image(image_id):
     ).filter(
         Detection.parent_image_id == image_id
     ).all()
+    
     detections_data = []
     for det, score in detections_query:
         detections_data.append({
             "id": det.id,
             "coordinates_labelme": det.coordinates_labelme,
             "scores": {
+                "grade": score.grade if score else None, # YENİ
                 "sitoplazma": score.score_sitoplazma if score else None,
                 "zona": score.score_zona if score else None,
                 "kumulus": score.score_kumulus if score else None,
                 "oopla": score.score_oopla if score else None
             }
         })
+
     return render_template(
         'annotate.html',
         image=image, 
@@ -217,24 +222,31 @@ def annotate_image(image_id):
 @app.route('/api/save_score', methods=['POST'])
 @login_required
 def save_score():
-    # ... (save_score API'niz aynı kalıyor) ...
+    # === GÜNCELLENDİ: 'grade' verisini al ===
     data = request.json
     detection_id = data.get('detection_id')
     scores = data.get('scores')
+    grade = data.get('grade') # YENİ: A/B/C/D bilgisini al
+
     if not detection_id or not scores:
         return jsonify({'success': False, 'error': 'Eksik veri'}), 400
+
     score_obj = Score.query.filter_by(
         detection_id=detection_id,
         user_id=current_user.id
     ).first()
+    
     if not score_obj:
         score_obj = Score(detection_id=detection_id, user_id=current_user.id)
         db.session.add(score_obj)
+
+    score_obj.grade = grade # YENİ: 'grade'i kaydet
     score_obj.score_sitoplazma = scores.get('sitoplazma')
     score_obj.score_zona = scores.get('zona')
     score_obj.score_kumulus = scores.get('kumulus')
     score_obj.score_oopla = scores.get('oopla')
     score_obj.timestamp = datetime.utcnow()
+
     try:
         db.session.commit()
         return jsonify({'success': True})
@@ -245,12 +257,12 @@ def save_score():
 @app.route('/api/add_detection', methods=['POST'])
 @login_required
 def api_add_detection():
-    # ... (add_detection API'niz aynı kalıyor) ...
+    # ... (add_detection API'niz aynı kalıyor, DİKKAT: 'grade' ekledik) ...
     data = request.json
     image_id = data.get('image_id')
     coordinates = data.get('coordinates')
     if not image_id or not coordinates:
-        return jsonify({'success': False, 'error': 'Eksik veri: Resim ID veya koordinatlar eksik.'}), 400
+        return jsonify({'success': False, 'error': 'Eksik veri'}), 400
     image = Image.query.get(image_id)
     if not image:
         return jsonify({'success': False, 'error': 'İlişkili resim bulunamadı.'}), 404
@@ -260,25 +272,25 @@ def api_add_detection():
         for det in existing_detections:
             try:
                 index = int(det.id.split('_')[-1])
-                if index > max_index:
-                    max_index = index
+                if index > max_index: max_index = index
             except ValueError: pass
         new_index = max_index + 1
         new_detection_id = f"{image_id}_{new_index}"
         new_detection = Detection(
             id=new_detection_id,
             parent_image_id=image_id,
-            coordinates_labelme={
-                "shape_type": "rectangle",
-                "points": coordinates
-            }
+            coordinates_labelme={"shape_type": "rectangle", "points": coordinates}
         )
         db.session.add(new_detection)
         db.session.commit()
+        # Yeni tespit verisine 'grade: None' ekle
         new_detection_data = {
             "id": new_detection.id,
             "coordinates_labelme": new_detection.coordinates_labelme,
-            "scores": { "sitoplazma": None, "zona": None, "kumulus": None, "oopla": None }
+            "scores": { 
+                "grade": None, # YENİ
+                "sitoplazma": None, "zona": None, "kumulus": None, "oopla": None 
+            }
         }
         return jsonify({'success': True, 'new_detection': new_detection_data})
     except Exception as e:
@@ -307,51 +319,40 @@ def api_delete_detection():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # =====================================================================
-# ===  ADMIN PANELİ ROTALARI (GÜNCELLENDİ)
+# ===  ADMIN PANELİ ROTALARI
 # =====================================================================
 
 @app.route('/admin')
 @login_required
 @admin_required 
 def admin_dashboard():
-    # === YENİ: İSTATİSTİK SORGULARI ===
-    
-    # 1. Uzman İstatistikleri
+    # ... (admin_dashboard istatistikleriniz aynı kalıyor) ...
     experts = User.query.filter_by(role='uzman').all()
     expert_stats = []
     for expert in experts:
-        # Bu uzmana kaç resim atanmış?
         assigned_count = ImageAssignment.query.filter_by(expert_id=expert.id).count()
-        
-        # Bu uzman kaç *farklı* resmi puanlamış?
         scored_images_count = db.session.query(
             func.count(db.distinct(Detection.parent_image_id))
         ).join(Score).filter(Score.user_id == expert.id).scalar()
-        
         expert_stats.append({
             'user': expert,
             'assigned_count': assigned_count,
             'scored_images_count': scored_images_count
         })
-
-    # 2. Görüntü İstatistikleri
     images = Image.query.order_by(Image.id.desc()).all()
     image_stats = []
     for img in images:
-        # Bu resmi kaç *farklı* uzman puanlamış?
         scorer_count = db.session.query(
             func.count(db.distinct(Score.user_id))
         ).join(Detection).filter(Detection.parent_image_id == img.id).scalar()
-        
         image_stats.append({
             'image': img,
             'scorer_count': scorer_count
         })
-    
     return render_template(
         'admin_dashboard.html', 
-        image_stats=image_stats, # Görüntü listesi + istatistik
-        expert_stats=expert_stats # Uzman listesi + istatistik
+        image_stats=image_stats, 
+        expert_stats=expert_stats 
     )
 
 @app.route('/admin/assign/<image_id>', methods=['POST'])
@@ -381,7 +382,6 @@ def admin_assign_image(image_id):
 @login_required
 @admin_required
 def admin_image_detail(image_id):
-    # ... (Bu rota aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
     return render_template('admin_image_detail.html', image=image)
 
@@ -390,11 +390,12 @@ def admin_image_detail(image_id):
 @login_required
 @admin_required
 def admin_download_scores():
-    # ... (Bu rota aynı kalıyor) ...
+    # === GÜNCELLENDİ: Excel Raporuna 'Genel_Kalite' (grade) eklendi ===
     query = db.session.query(
         Image.id.label('Resim_ID'),
         Detection.id.label('Oosit_ID'),
         User.username.label('Uzman_Adı'),
+        Score.grade.label('Genel_Kalite (A-D)'), # YENİ
         Score.score_sitoplazma.label('Sitoplazma'),
         Score.score_zona.label('Zona'),
         Score.score_kumulus.label('Kumulus'),
@@ -409,11 +410,13 @@ def admin_download_scores():
     ).order_by(
         Image.id, User.username
     )
+    
     df = pd.read_sql(query.statement, db.engine)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='Tum_Puanlar', index=False)
     output.seek(0)
+    
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -440,35 +443,31 @@ def admin_delete_image(image_id):
     flash(f"Görüntü '{image_id}' ve tüm ilişkili veriler kalıcı olarak silindi.", 'success')
     return redirect(url_for('admin_dashboard'))
 
+# ... (Tüm /admin/download/ rotaları aynı kalıyor) ...
 @app.route('/admin/download/czi/<image_id>')
 @login_required
 @admin_required
 def admin_download_czi(image_id):
-    # ... (Bu rota aynı kalıyor) ...
     img = Image.query.get_or_404(image_id)
     try:
         return send_from_directory(
             app.config['UPLOAD_FOLDER'], os.path.basename(img.file_path), as_attachment=True
         )
     except FileNotFoundError: abort(404, "Dosya bulunamadı.")
-
 @app.route('/admin/download/png/<image_id>')
 @login_required
 @admin_required
 def admin_download_png(image_id):
-    # ... (Bu rota aynı kalıyor) ...
     img = Image.query.get_or_404(image_id)
     try:
         return send_from_directory(
             app.config['PREVIEW_FOLDER'], os.path.basename(img.preview_path), as_attachment=True
         )
     except FileNotFoundError: abort(404, "Dosya bulunamadı.")
-
 @app.route('/admin/download/labelme/image/<image_id>')
 @login_required
 @admin_required
 def admin_download_labelme_image(image_id):
-    # ... (Bu rota aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
     labelme_output = {
         "version": "5.0.1", "flags": {}, "shapes": [],
@@ -493,11 +492,11 @@ def admin_download_labelme_image(image_id):
         'Content-Type': 'application/json'
     }
 
+# ... (admin_image_crop rotası aynı kalıyor) ...
 @app.route('/admin/image_crop/<detection_id>')
 @login_required
 @admin_required
 def admin_image_crop(detection_id):
-    # ... (Bu rota aynı kalıyor) ...
     det = Detection.query.get_or_404(detection_id)
     img = det.parent_image
     preview_filename = os.path.basename(img.preview_path)
@@ -516,11 +515,11 @@ def admin_image_crop(detection_id):
         print(f"Görüntü kırpma hatası (ID: {detection_id}): {e}")
         abort(500, "Görüntü kırpılamadı.")
 
+# ... (admin_create_user rotası aynı kalıyor) ...
 @app.route('/admin/create_user', methods=['POST'])
 @login_required
 @admin_required
 def admin_create_user():
-    # ... (Bu rota aynı kalıyor) ...
     username = request.form.get('username')
     password = request.form.get('password')
     if not username or not password:
@@ -541,24 +540,16 @@ def admin_create_user():
         flash(f"Kullanıcı oluşturulurken bir hata oluştu: {e}", 'danger')
     return redirect(url_for('admin_dashboard'))
 
-# === YENİ: UZMAN SİLME ROTASI ===
+# ... (admin_delete_user rotası aynı kalıyor) ...
 @app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
 @login_required
 @admin_required
 def admin_delete_user(user_id):
     user_to_delete = User.query.get_or_404(user_id)
-
-    # Admin'in kendini silmesini engelle
     if user_to_delete.id == current_user.id or user_to_delete.role == 'admin':
         flash('Admin kullanıcısı silinemez.', 'danger')
         return redirect(url_for('admin_dashboard'))
-    
     try:
-        # Uzmanı sil
-        # models.py'deki 'ondelete' kuralları çalışacak:
-        # - Atamaları (ImageAssignment) silinecek (CASCADE)
-        # - Puanları (Score) kalacak, user_id=NULL olacak (SET NULL)
-        # - Yüklemeleri (Image) kalacak, uploader_id=NULL olacak (SET NULL)
         username = user_to_delete.username
         db.session.delete(user_to_delete)
         db.session.commit()
@@ -566,7 +557,6 @@ def admin_delete_user(user_id):
     except Exception as e:
         db.session.rollback()
         flash(f"Uzman silinirken bir hata oluştu: {e}", 'danger')
-        
     return redirect(url_for('admin_dashboard'))
 
 if __name__ == '__main__':
