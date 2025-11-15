@@ -1,6 +1,12 @@
 # app.py
 import os
 import json
+import pandas as pd
+import io
+import zipfile 
+import csv     
+from PIL import Image as PILImage 
+# ...
 from datetime import datetime
 from flask import (
     Flask, render_template, request, redirect, url_for, flash, abort,
@@ -558,6 +564,125 @@ def admin_delete_user(user_id):
         db.session.rollback()
         flash(f"Uzman silinirken bir hata oluştu: {e}", 'danger')
     return redirect(url_for('admin_dashboard'))
+
+# === YENİ: SINIFLANDIRMA (MOBILENETV2) VERİ SETİ İNDİRME ROTASI ===
+@app.route('/admin/download_classification_dataset')
+@login_required
+@admin_required
+def admin_download_classification_dataset():
+    
+    # 1. Hafızada (in-memory) bir ZIP dosyası oluştur
+    zip_buffer = io.BytesIO()
+    
+    # 2. Hafızada bir CSV dosyası oluştur
+    csv_buffer = io.StringIO()
+    csv_writer = csv.writer(csv_buffer)
+    
+    # CSV başlık satırını yaz
+    csv_writer.writerow([
+        'dosya_adi', 
+        'genel_puan', # A, B, C, D
+        'sitoplazma', # 1-5
+        'zona',       # 1-5
+        'kumulus',    # 1-5
+        'oopla'       # 1-5
+    ])
+
+    try:
+        # 3. Veritabanından "A, B, C, D" notu verilmiş TÜM puanları çek
+        scored_items = db.session.query(
+            Score, Detection, Image
+        ).join(
+            Detection, Score.detection_id == Detection.id
+        ).join(
+            Image, Detection.parent_image_id == Image.id
+        ).filter(
+            Score.grade.in_(['A', 'B', 'C', 'D'])
+        ).all()
+        
+        if not scored_items:
+            flash('Sınıflandırma veri seti oluşturulamadı. Henüz A, B, C veya D olarak puanlanmış oosit yok.', 'danger')
+            return redirect(url_for('admin_dashboard'))
+
+        # 4. ZIP dosyasını yazma modunda aç
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_f:
+            
+            processed_count = 0
+            
+            # 5. Her puanlanmış oosit için döngüye gir
+            for score, detection, image in scored_items:
+                
+                # Benzersiz dosya adı: OositID_UzmanID_Puan.png
+                png_filename = f"{detection.id}_u{score.user.id}_g{score.grade}.png"
+
+                try:
+                    # Ana PNG dosyasını aç
+                    preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], f"{image.id}.png")
+                    
+                    with PILImage.open(preview_full_path) as base_img:
+                        # Orijinal koordinatları al
+                        coords = detection.coordinates_labelme['points']
+                        box = (int(coords[0][0]), int(coords[0][1]), int(coords[1][0]), int(coords[1][1]))
+                        
+                        # Oositi Kırp
+                        cropped_img = base_img.crop(box)
+                        
+                        # === 512x512 PADDING (BOZULMAYI ÖNLEME) ===
+                        
+                        # 1. Kırpılmış görüntüyü en-boy oranını koruyarak 512 sınırına küçült/büyüt
+                        # LANCZOS en yüksek kaliteli yeniden örnekleme filtresidir
+                        cropped_img.thumbnail((512, 512), PILImage.Resampling.LANCZOS)
+                        
+                        # 2. Siyah (RGB=0,0,0) 512x512 bir arka plan oluştur
+                        # (Kırpılmış resim RGB değilse diye 'RGB'ye çeviriyoruz)
+                        padded_img = PILImage.new("RGB", (512, 512), (0, 0, 0))
+                        
+                        # 3. Kırpılmış görüntüyü bu siyah arka planın ortasına yapıştır
+                        paste_x = (512 - cropped_img.width) // 2
+                        paste_y = (512 - cropped_img.height) // 2
+                        padded_img.paste(cropped_img.convert("RGB"), (paste_x, paste_y))
+                        
+                        # 4. Son 512x512 görüntüyü hafızada bir tampona kaydet
+                        img_io = io.BytesIO()
+                        padded_img.save(img_io, 'PNG')
+                        img_io.seek(0)
+                        
+                        # 5. Bu görüntüyü ZIP dosyasına ekle
+                        zip_f.writestr(png_filename, img_io.getvalue())
+                        
+                        # 6. CSV dosyasına ilgili satırı ekle
+                        csv_writer.writerow([
+                            png_filename,
+                            score.grade,
+                            score.score_sitoplazma,
+                            score.score_zona,
+                            score.score_kumulus,
+                            score.score_oopla
+                        ])
+                        
+                        processed_count += 1
+
+                except Exception as e:
+                    print(f"HATA: Veri seti oluşturulurken {detection.id} işlenemedi: {e}")
+            
+            # 6. CSV dosyasını ZIP'e ekle
+            zip_f.writestr('labels.csv', csv_buffer.getvalue())
+
+        zip_buffer.seek(0)
+        
+        flash(f'Başarılı: {processed_count} adet görüntü ve 1 adet labels.csv dosyası ile .zip arşivi oluşturuldu.', 'success')
+        
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'MobileNet_VeriSeti_{datetime.now().strftime("%Y%m%d")}.zip'
+        )
+        
+    except Exception as e:
+        flash(f"Veri seti oluşturulurken bir hata oluştu: {e}", 'danger')
+        print(f"HATA: /admin/download_classification_dataset: {e}")
+        return redirect(url_for('admin_dashboard'))
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')

@@ -37,10 +37,12 @@
         .btn {
             padding: 10px 15px; border: none; border-radius: 4px; 
             cursor: pointer; text-decoration: none; display: inline-block;
+            font-weight: bold;
         }
         .btn-primary { background: #007bff; color: white; }
         .btn-success { background: #28a745; color: white; }
         .btn-danger { background: #dc3545; color: white; }
+        .btn-info { background: #17a2b8; color: white; } /* Veri seti için */
         .btn-sm { padding: 5px 10px; font-size: 0.9em; }
         
     </style>
@@ -141,7 +143,8 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for stat in image_stats %} <tr>
+                        {% for stat in image_stats %}
+                        <tr>
                             <td>{{ stat.image.id }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('admin_assign_image', image_id=stat.image.id) }}">
@@ -193,7 +196,7 @@
                             <td>{{ stat.user.username }}</td>
                             <td style="text-align: right;">
                                 <form method="POST" action="{{ url_for('admin_delete_user', user_id=stat.user.id) }}"
-                                      onsubmit="return confirm('`{{ stat.user.username }}` uzmanını silmek istediğinizden emin misiniz? (Verdiği puanlar kaybolmaz, anonimleşir)');">
+                                      onsubmit="return confirm('`{{ stat.user.username }}` uzmanını silmek istediğinizden emin misiniz?');">
                                     <button type="submit" class="btn btn-danger btn-sm">Sil</button>
                                 </form>
                             </td>
@@ -206,9 +209,15 @@
             </div>
 
             <div class="box">
-                <h2>Tüm Puanları İndir</h2>
-                <p>Tüm puanları Excel (.xlsx) dosyası olarak indirin.</p>
-                <a href="{{ url_for('admin_download_scores') }}" class="btn btn-success">Excel Olarak İndir</a>
+                <h2>Raporlar ve Veri Seti</h2>
+                <p>Tüm puanları Excel (.xlsx) olarak indirin.</p>
+                <a href="{{ url_for('admin_download_scores') }}" class="btn btn-success" style="width: 90%; text-align: center;">Excel Olarak İndir</a>
+                <hr style="margin: 20px 0;">
+                
+                <p>MobileNetV2 eğitimi için 512x512 veri setini (.zip) indirin.</p>
+                <a href="{{ url_for('admin_download_classification_dataset') }}" class="btn btn-info" style="width: 90%; text-align: center;">
+                    Eğitim Veri Setini İndir (.zip)
+                </a>
             </div>
         </div>
     </div>
