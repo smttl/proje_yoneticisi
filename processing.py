@@ -8,8 +8,8 @@ from aicsimageio import AICSImage
 def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
     """
     Bir .czi dosyasını aicsimageio kullanarak işler.
-    Kanal (C) veya Sahne (S) boyutlarına bakarak RENKLİ (RGB) PNG oluşturur.
-    Kontrast ayarı (p5-p95) ile güncellendi.
+    Eğer görüntü 'uint8' ise, verilere HİÇ DOKUNMAZ ("olduğu gibi" alır).
+    Eğer 'uint16' vb. ise, kontrastı ayarlar (p2-p98).
     """
     
     try:
@@ -44,27 +44,21 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         z_slice = img.dims.Z // 2
         num_channels = img.dims.C
         num_scenes = img.dims.S
+        pixel_type = img.dtype  # Görüntünün veri tipini (uint8, uint16 vb.) al
         
         def normalize_channel(channel_data):
-            """Tek bir 2D kanalı alır ve kontrastı ayarlar (0-255 uint8 döndürür)"""
+            """SADECE uint8 OLMAYAN veriler için kontrastı ayarlar"""
             data = channel_data.astype(np.float32)
+            p2 = np.percentile(data, 2)
+            p98 = np.percentile(data, 98)
+            data = np.clip(data, p2, p98)
             
-            # === KONTRAST DÜZELTMESİ ===
-            # Aşırı parlak/karanlık noktaları (arka plan/çekirdek) göz ardı etmek
-            # ve orta tonlara odaklanmak için %5 ve %95 kullanıyoruz.
-            p5 = np.percentile(data, 5)   # En karanlık %5
-            p95 = np.percentile(data, 95) # En parlak %95
-            # ==========================
-
-            data = np.clip(data, p5, p95) # Görüntüyü bu aralığa kırp
-            
-            min_val = np.min(data) # Artık p5'e eşit
-            max_val = np.max(data) # Artık p95'e eşit
+            min_val = np.min(data)
+            max_val = np.max(data)
             
             if max_val == min_val:
                 return np.zeros_like(data, dtype=np.uint8)
             
-            # Veriyi 0-255 arasına yay
             data = (data - min_val) / (max_val - min_val)
             return (data * 255).astype(np.uint8)
 
@@ -73,40 +67,48 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         
         if num_scenes >= 3 and num_channels == 1:
             # === RENK (Sahne'den) ===
-            # ZEN'in yaptığı gibi: R, G, B'yi S=0, S=1, S=2'den oku (C=0 iken)
             print("DEBUG: Renk modu 'Scene' (S:3, C:1) olarak algılandı.")
-            
             img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
 
-            # R (S=0), G (S=1), B (S=2) kanallarını AYRI AYRI normalize et
-            img_data_rgb[:, :, 0] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=0)
-            )
-            img_data_rgb[:, :, 1] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=1)
-            )
-            img_data_rgb[:, :, 2] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=0, S=2)
-            )
+            # R (S=0), G (S=1), B (S=2) kanallarını al
+            channel_r = img.get_image_data("YX", Z=z_slice, T=0, C=0, S=0)
+            channel_g = img.get_image_data("YX", Z=z_slice, T=0, C=0, S=1)
+            channel_b = img.get_image_data("YX", Z=z_slice, T=0, C=0, S=2)
+
+            # === DOKUNMA KONTROLÜ ===
+            if pixel_type != np.uint8:
+                print("DEBUG: Veri tipi uint8 değil, normalize ediliyor...")
+                img_data_rgb[:, :, 0] = normalize_channel(channel_r)
+                img_data_rgb[:, :, 1] = normalize_channel(channel_g)
+                img_data_rgb[:, :, 2] = normalize_channel(channel_b)
+            else:
+                print("DEBUG: Veri tipi uint8, normalize edilmiyor (olduğu gibi alınıyor).")
+                img_data_rgb[:, :, 0] = channel_r
+                img_data_rgb[:, :, 1] = channel_g
+                img_data_rgb[:, :, 2] = channel_b
+            # ========================
             
             pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
             
         elif num_channels >= 3:
             # === RENK (Kanal'dan) ===
-            # Standart RGB (C=0, C=1, C=2)
             print("DEBUG: Renk modu 'Channel' (C:3) olarak algılandı.")
-            
             img_data_rgb = np.zeros((img.dims.Y, img.dims.X, 3), dtype=np.uint8)
 
-            img_data_rgb[:, :, 0] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=0)
-            )
-            img_data_rgb[:, :, 1] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=1)
-            )
-            img_data_rgb[:, :, 2] = normalize_channel(
-                img.get_image_data("YX", Z=z_slice, T=0, C=2)
-            )
+            channel_r = img.get_image_data("YX", Z=z_slice, T=0, C=0)
+            channel_g = img.get_image_data("YX", Z=z_slice, T=0, C=1)
+            channel_b = img.get_image_data("YX", Z=z_slice, T=0, C=2)
+            
+            if pixel_type != np.uint8:
+                print("DEBUG: Veri tipi uint8 değil, normalize ediliyor...")
+                img_data_rgb[:, :, 0] = normalize_channel(channel_r)
+                img_data_rgb[:, :, 1] = normalize_channel(channel_g)
+                img_data_rgb[:, :, 2] = normalize_channel(channel_b)
+            else:
+                print("DEBUG: Veri tipi uint8, normalize edilmiyor (olduğu gibi alınıyor).")
+                img_data_rgb[:, :, 0] = channel_r
+                img_data_rgb[:, :, 1] = channel_g
+                img_data_rgb[:, :, 2] = channel_b
             
             pil_img = PILImage.fromarray(img_data_rgb, 'RGB')
             
@@ -114,7 +116,14 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
             # === SİYAH BEYAZ (Grayscale) ===
             print("DEBUG: Mod 'Grayscale' (C:1, S:1) olarak algılandı.")
             img_data = img.get_image_data("YX", Z=z_slice, C=0, T=0, S=0)
-            img_data_normalized = normalize_channel(img_data)
+            
+            if pixel_type != np.uint8:
+                print("DEBUG: Veri tipi uint8 değil, normalize ediliyor...")
+                img_data_normalized = normalize_channel(img_data)
+            else:
+                print("DEBUG: Veri tipi uint8, normalize edilmiyor (olduğu gibi alınıyor).")
+                img_data_normalized = img_data
+                
             pil_img = PILImage.fromarray(img_data_normalized, 'L')
 
     except Exception as e:
