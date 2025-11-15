@@ -7,6 +7,7 @@ from flask import (
     jsonify, session, send_file, send_from_directory
 )
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func # İstatistikler için eklendi
 from flask_login import (
     LoginManager, login_user, logout_user, login_required, current_user
 )
@@ -15,7 +16,7 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 import pandas as pd
 import io
-from PIL import Image as PILImage # Görüntü kırpma ve boyut okuma için
+from PIL import Image as PILImage
 
 # Yerel modülleri import et
 from models import db, User, Image, Detection, Score, ImageAssignment
@@ -23,28 +24,20 @@ from processing import process_czi_image
 
 # --- UYGULAMA KONFİGÜRASYONU ---
 app = Flask(__name__)
-
-# Proje ana dizinini (app.py'nin olduğu yer) bul
+# ... (app.config kodlarınızın tamamı aynı kalıyor) ...
 basedir = os.path.abspath(os.path.dirname(__file__))
-
-# Instance klasörünün tam (mutlak) yolunu oluştur
 instance_dir = os.path.join(basedir, 'instance')
-# Veritabanı dosyasının tam (mutlak) yolunu oluştur
 db_path = os.path.join(instance_dir, 'proje.db')
-
 app.config['SECRET_KEY'] = 'COK_GIZLI_BIR_ANAHTAR_12345'
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}' 
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['PREVIEW_FOLDER'] = os.path.join(basedir, 'static/previews')
 app.config['ALLOWED_EXTENSIONS'] = {'czi'}
 app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt' 
-
-# Gerekli klasörleri oluştur
 os.makedirs(instance_dir, exist_ok=True) 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PREVIEW_FOLDER'], exist_ok=True)
-
-# --- EKLENTİLERİ BAŞLATMA ---
+# ... (Eklenti başlatma kodlarınız aynı kalıyor) ...
 db.init_app(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
@@ -61,19 +54,16 @@ def load_user(user_id):
 def init_db_command():
     """Veritabanı tablolarını ve ilk kullanıcıları oluşturur."""
     db.create_all()
-    
     if not User.query.filter_by(username='uzman1').first():
         hashed_password = bcrypt.generate_password_hash('123456').decode('utf-8')
         new_user = User(username='uzman1', password=hashed_password, role='uzman')
         db.session.add(new_user)
         print("Kullanıcı 'uzman1' oluşturuldu.")
-
     if not User.query.filter_by(username='admin').first():
         hashed_password = bcrypt.generate_password_hash('admin').decode('utf-8')
         new_user = User(username='admin', password=hashed_password, role='admin')
         db.session.add(new_user)
         print("Kullanıcı 'admin' oluşturuldu.")
-        
     db.session.commit()
     print("Veritabanı başarıyla oluşturuldu/güncellendi.")
 
@@ -100,8 +90,8 @@ def login():
             return redirect(url_for('admin_dashboard'))
         else:
             return redirect(url_for('dashboard'))
-            
     if request.method == 'POST':
+        # ... (login mantığınız aynı) ...
         username = request.form.get('username')
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
@@ -121,12 +111,11 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# --- ANA UYGULAMA SAYFALARI ---
-
-# === UZMAN DASHBOARD ===
+# --- UZMAN SAYFALARI ---
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
+    # ... (Uzman dashboard kodunuzun tamamı aynı kalıyor) ...
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('Dosya kısmı yok', 'danger')
@@ -144,14 +133,12 @@ def dashboard():
             czi_filename_on_server = f"{image_id}{file_extension}"
             czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], czi_filename_on_server)
             file.save(czi_save_path)
-            
             try:
                 metadata, preview_path, detections = process_czi_image(
                     czi_save_path, image_id,
                     app.config['PREVIEW_FOLDER'],
                     app.config['YOLO_MODEL_PATH']
                 )
-                
                 new_image = Image(
                     id=image_id, file_path=czi_save_path,
                     preview_path=preview_path, 
@@ -159,7 +146,6 @@ def dashboard():
                     uploader_id=current_user.id 
                 )
                 db.session.add(new_image)
-                
                 for det_data in detections:
                     new_detection = Detection(
                         id=det_data['id'],
@@ -167,10 +153,8 @@ def dashboard():
                         coordinates_labelme=det_data['coordinates_labelme']
                     )
                     db.session.add(new_detection)
-                
                 db.session.commit()
                 flash(f"Görüntü {image_id} başarıyla yüklendi.", 'success')
-            
             except Exception as e:
                 db.session.rollback()
                 if os.path.exists(czi_save_path): os.remove(czi_save_path) 
@@ -181,10 +165,9 @@ def dashboard():
                         os.remove(error_preview_path_abs)
                 except: pass 
                 flash(f"Görüntü işlenemedi: {e}", 'danger')
-                
             return redirect(url_for('dashboard'))
 
-    # === GET İSTEĞİ (Sayfa Yüklendiğinde) ===
+    # GET isteği
     uploaded_images = Image.query.filter_by(uploader_id=current_user.id).order_by(Image.id.desc()).all()
     assigned_images = Image.query.join(
         ImageAssignment, Image.id == ImageAssignment.image_id
@@ -193,19 +176,17 @@ def dashboard():
     ).order_by(
         Image.id.desc()
     ).all()
-    
     return render_template(
         'dashboard.html', 
         uploaded_images=uploaded_images, 
         assigned_images=assigned_images
     )
 
-# === UZMAN ANNOTASYON SAYFASI ===
 @app.route('/annotate/<image_id>')
 @login_required
 def annotate_image(image_id):
+    # ... (annotate_image rotanız aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
-    
     detections_query = db.session.query(
         Detection, Score
     ).outerjoin(
@@ -214,7 +195,6 @@ def annotate_image(image_id):
     ).filter(
         Detection.parent_image_id == image_id
     ).all()
-    
     detections_data = []
     for det, score in detections_query:
         detections_data.append({
@@ -227,7 +207,6 @@ def annotate_image(image_id):
                 "oopla": score.score_oopla if score else None
             }
         })
-
     return render_template(
         'annotate.html',
         image=image, 
@@ -235,32 +214,27 @@ def annotate_image(image_id):
         metadata_json=json.dumps(image.metadata_json)
     )
 
-# === UZMAN PUAN KAYDETME API ===
 @app.route('/api/save_score', methods=['POST'])
 @login_required
 def save_score():
+    # ... (save_score API'niz aynı kalıyor) ...
     data = request.json
     detection_id = data.get('detection_id')
     scores = data.get('scores')
-
     if not detection_id or not scores:
         return jsonify({'success': False, 'error': 'Eksik veri'}), 400
-
     score_obj = Score.query.filter_by(
         detection_id=detection_id,
         user_id=current_user.id
     ).first()
-    
     if not score_obj:
         score_obj = Score(detection_id=detection_id, user_id=current_user.id)
         db.session.add(score_obj)
-
     score_obj.score_sitoplazma = scores.get('sitoplazma')
     score_obj.score_zona = scores.get('zona')
     score_obj.score_kumulus = scores.get('kumulus')
     score_obj.score_oopla = scores.get('oopla')
     score_obj.timestamp = datetime.utcnow()
-
     try:
         db.session.commit()
         return jsonify({'success': True})
@@ -268,48 +242,138 @@ def save_score():
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/add_detection', methods=['POST'])
+@login_required
+def api_add_detection():
+    # ... (add_detection API'niz aynı kalıyor) ...
+    data = request.json
+    image_id = data.get('image_id')
+    coordinates = data.get('coordinates')
+    if not image_id or not coordinates:
+        return jsonify({'success': False, 'error': 'Eksik veri: Resim ID veya koordinatlar eksik.'}), 400
+    image = Image.query.get(image_id)
+    if not image:
+        return jsonify({'success': False, 'error': 'İlişkili resim bulunamadı.'}), 404
+    try:
+        existing_detections = Detection.query.filter_by(parent_image_id=image_id).all()
+        max_index = 0
+        for det in existing_detections:
+            try:
+                index = int(det.id.split('_')[-1])
+                if index > max_index:
+                    max_index = index
+            except ValueError: pass
+        new_index = max_index + 1
+        new_detection_id = f"{image_id}_{new_index}"
+        new_detection = Detection(
+            id=new_detection_id,
+            parent_image_id=image_id,
+            coordinates_labelme={
+                "shape_type": "rectangle",
+                "points": coordinates
+            }
+        )
+        db.session.add(new_detection)
+        db.session.commit()
+        new_detection_data = {
+            "id": new_detection.id,
+            "coordinates_labelme": new_detection.coordinates_labelme,
+            "scores": { "sitoplazma": None, "zona": None, "kumulus": None, "oopla": None }
+        }
+        return jsonify({'success': True, 'new_detection': new_detection_data})
+    except Exception as e:
+        db.session.rollback()
+        print(f"HATA: /api/add_detection: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/delete_detection', methods=['POST'])
+@login_required
+def api_delete_detection():
+    # ... (delete_detection API'niz aynı kalıyor) ...
+    data = request.json
+    detection_id = data.get('detection_id')
+    if not detection_id:
+        return jsonify({'success': False, 'error': 'Eksik veri: detection_id eksik.'}), 400
+    detection_to_delete = Detection.query.get(detection_id)
+    if not detection_to_delete:
+        return jsonify({'success': False, 'error': 'Tespit bulunamadı.'}), 404
+    try:
+        db.session.delete(detection_to_delete)
+        db.session.commit()
+        return jsonify({'success': True, 'deleted_id': detection_id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"HATA: /api/delete_detection: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # =====================================================================
-# ===  ADMIN PANELİ ROTALARI
+# ===  ADMIN PANELİ ROTALARI (GÜNCELLENDİ)
 # =====================================================================
 
 @app.route('/admin')
 @login_required
 @admin_required 
 def admin_dashboard():
-    images = Image.query.order_by(Image.id.desc()).all()
+    # === YENİ: İSTATİSTİK SORGULARI ===
+    
+    # 1. Uzman İstatistikleri
     experts = User.query.filter_by(role='uzman').all()
+    expert_stats = []
+    for expert in experts:
+        # Bu uzmana kaç resim atanmış?
+        assigned_count = ImageAssignment.query.filter_by(expert_id=expert.id).count()
+        
+        # Bu uzman kaç *farklı* resmi puanlamış?
+        scored_images_count = db.session.query(
+            func.count(db.distinct(Detection.parent_image_id))
+        ).join(Score).filter(Score.user_id == expert.id).scalar()
+        
+        expert_stats.append({
+            'user': expert,
+            'assigned_count': assigned_count,
+            'scored_images_count': scored_images_count
+        })
+
+    # 2. Görüntü İstatistikleri
+    images = Image.query.order_by(Image.id.desc()).all()
+    image_stats = []
+    for img in images:
+        # Bu resmi kaç *farklı* uzman puanlamış?
+        scorer_count = db.session.query(
+            func.count(db.distinct(Score.user_id))
+        ).join(Detection).filter(Detection.parent_image_id == img.id).scalar()
+        
+        image_stats.append({
+            'image': img,
+            'scorer_count': scorer_count
+        })
     
     return render_template(
         'admin_dashboard.html', 
-        images=images, 
-        experts=experts
+        image_stats=image_stats, # Görüntü listesi + istatistik
+        expert_stats=expert_stats # Uzman listesi + istatistik
     )
 
 @app.route('/admin/assign/<image_id>', methods=['POST'])
 @login_required
 @admin_required
 def admin_assign_image(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     expert_id = request.form.get('expert_id')
     if not expert_id:
         flash('Uzman seçilmedi.', 'danger')
         return redirect(url_for('admin_dashboard'))
-
     existing_assignment = ImageAssignment.query.filter_by(
         image_id=image_id, 
         expert_id=expert_id
     ).first()
-    
     if existing_assignment:
         flash('Bu görüntü zaten bu uzmana atanmış.', 'info')
     else:
-        new_assignment = ImageAssignment(
-            image_id=image_id,
-            expert_id=expert_id
-        )
+        new_assignment = ImageAssignment(image_id=image_id, expert_id=expert_id)
         db.session.add(new_assignment)
         db.session.commit()
         flash('Görüntü başarıyla uzmana atandı.', 'success')
-        
     return redirect(url_for('admin_dashboard'))
 
 
@@ -317,6 +381,7 @@ def admin_assign_image(image_id):
 @login_required
 @admin_required
 def admin_image_detail(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
     return render_template('admin_image_detail.html', image=image)
 
@@ -325,6 +390,7 @@ def admin_image_detail(image_id):
 @login_required
 @admin_required
 def admin_download_scores():
+    # ... (Bu rota aynı kalıyor) ...
     query = db.session.query(
         Image.id.label('Resim_ID'),
         Detection.id.label('Oosit_ID'),
@@ -343,15 +409,11 @@ def admin_download_scores():
     ).order_by(
         Image.id, User.username
     )
-    
     df = pd.read_sql(query.statement, db.engine)
-    
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='Tum_Puanlar', index=False)
-    
     output.seek(0)
-    
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -363,26 +425,18 @@ def admin_download_scores():
 @login_required
 @admin_required
 def admin_delete_image(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     img = Image.query.get_or_404(image_id)
-    
-    # 1. Dosyaları diskten sil
     try:
-        if os.path.exists(img.file_path):
-            os.remove(img.file_path)
-        
+        if os.path.exists(img.file_path): os.remove(img.file_path)
         preview_filename = os.path.basename(img.preview_path)
         preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
-        if os.path.exists(preview_full_path):
-            os.remove(preview_full_path)
-            
+        if os.path.exists(preview_full_path): os.remove(preview_full_path)
     except OSError as e:
         flash(f"Disk üzerinden dosya silinirken bir hata oluştu: {e}", 'danger')
         return redirect(url_for('admin_dashboard'))
-
-    # 2. Veritabanından kaydı sil (cascade delete çalışır)
     db.session.delete(img)
     db.session.commit()
-    
     flash(f"Görüntü '{image_id}' ve tüm ilişkili veriler kalıcı olarak silindi.", 'success')
     return redirect(url_for('admin_dashboard'))
 
@@ -390,72 +444,50 @@ def admin_delete_image(image_id):
 @login_required
 @admin_required
 def admin_download_czi(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     img = Image.query.get_or_404(image_id)
     try:
         return send_from_directory(
-            app.config['UPLOAD_FOLDER'],
-            os.path.basename(img.file_path),
-            as_attachment=True
+            app.config['UPLOAD_FOLDER'], os.path.basename(img.file_path), as_attachment=True
         )
-    except FileNotFoundError:
-        abort(404, "Dosya bulunamadı.")
+    except FileNotFoundError: abort(404, "Dosya bulunamadı.")
 
 @app.route('/admin/download/png/<image_id>')
 @login_required
 @admin_required
 def admin_download_png(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     img = Image.query.get_or_404(image_id)
     try:
         return send_from_directory(
-            app.config['PREVIEW_FOLDER'],
-            os.path.basename(img.preview_path),
-            as_attachment=True
+            app.config['PREVIEW_FOLDER'], os.path.basename(img.preview_path), as_attachment=True
         )
-    except FileNotFoundError:
-        abort(404, "Dosya bulunamadı.")
+    except FileNotFoundError: abort(404, "Dosya bulunamadı.")
 
-# === YENİ: TÜM TESPİTLER İÇİN LABELME JSON İNDİRME ROTASI ===
 @app.route('/admin/download/labelme/image/<image_id>')
 @login_required
 @admin_required
 def admin_download_labelme_image(image_id):
+    # ... (Bu rota aynı kalıyor) ...
     image = Image.query.get_or_404(image_id)
-    
-    # Standart LabelMe JSON dosya yapısını oluştur
     labelme_output = {
-        "version": "5.0.1", 
-        "flags": {},
-        "shapes": [], # Tespitler bu listeye eklenecek
-        "imagePath": f"{image.id}.png", 
-        "imageData": None,
-        "imageHeight": None,
-        "imageWidth": None
+        "version": "5.0.1", "flags": {}, "shapes": [],
+        "imagePath": f"{image.id}.png", "imageData": None,
+        "imageHeight": None, "imageWidth": None
     }
-
-    # PNG'nin boyutlarını al
     try:
         preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], f"{image.id}.png")
         with PILImage.open(preview_full_path) as pil_img:
             labelme_output["imageWidth"] = pil_img.width
             labelme_output["imageHeight"] = pil_img.height
-    except Exception:
-        pass 
-
-    # Bu görüntüye ait TÜM tespitleri veritabanından bul
+    except Exception: pass 
     detections = Detection.query.filter_by(parent_image_id=image_id).all()
-    
-    # Her tespiti LabelMe "shapes" formatına dönüştür ve listeye ekle
     for det in detections:
         shape = {
-            "label": det.id, # "label" olarak oositin benzersiz ID'sini kullanıyoruz
-            "points": det.coordinates_labelme['points'],
-            "group_id": None,
-            "shape_type": "rectangle",
-            "flags": {}
+            "label": det.id, "points": det.coordinates_labelme['points'],
+            "group_id": None, "shape_type": "rectangle", "flags": {}
         }
         labelme_output["shapes"].append(shape)
-        
-    # Oluşturulan tam JSON dosyasını kullanıcıya döndür
     return jsonify(labelme_output), 200, {
         'Content-Disposition': f'attachment; filename={image.id}.json',
         'Content-Type': 'application/json'
@@ -465,27 +497,21 @@ def admin_download_labelme_image(image_id):
 @login_required
 @admin_required
 def admin_image_crop(detection_id):
+    # ... (Bu rota aynı kalıyor) ...
     det = Detection.query.get_or_404(detection_id)
     img = det.parent_image
-    
     preview_filename = os.path.basename(img.preview_path)
     preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], preview_filename)
-    
-    if not os.path.exists(preview_full_path):
-        abort(404, "Ana önizleme dosyası bulunamadı.")
-
+    if not os.path.exists(preview_full_path): abort(404, "Ana önizleme dosyası bulunamadı.")
     try:
         with PILImage.open(preview_full_path) as base_img:
             coords = det.coordinates_labelme['points']
             box = (int(coords[0][0]), int(coords[0][1]), int(coords[1][0]), int(coords[1][1]))
             cropped_img = base_img.crop(box)
-            
             img_io = io.BytesIO()
             cropped_img.save(img_io, 'PNG')
             img_io.seek(0)
-            
             return send_file(img_io, mimetype='image/png')
-            
     except Exception as e:
         print(f"Görüntü kırpma hatası (ID: {detection_id}): {e}")
         abort(500, "Görüntü kırpılamadı.")
@@ -494,18 +520,16 @@ def admin_image_crop(detection_id):
 @login_required
 @admin_required
 def admin_create_user():
+    # ... (Bu rota aynı kalıyor) ...
     username = request.form.get('username')
     password = request.form.get('password')
-
     if not username or not password:
         flash('Kullanıcı adı ve şifre alanları zorunludur.', 'danger')
         return redirect(url_for('admin_dashboard'))
-
     existing_user = User.query.filter_by(username=username).first()
     if existing_user:
         flash(f"'{username}' kullanıcı adı zaten mevcut. Lütfen başka bir ad seçin.", 'danger')
         return redirect(url_for('admin_dashboard'))
-
     try:
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         new_user = User(username=username, password=hashed_password, role='uzman')
@@ -515,115 +539,35 @@ def admin_create_user():
     except Exception as e:
         db.session.rollback()
         flash(f"Kullanıcı oluşturulurken bir hata oluştu: {e}", 'danger')
-
     return redirect(url_for('admin_dashboard'))
 
-# === YENİ: UZMANIN MANUEL OOSİT EKLEMESİ İÇİN API ===
-@app.route('/api/add_detection', methods=['POST'])
+# === YENİ: UZMAN SİLME ROTASI ===
+@app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
 @login_required
-def api_add_detection():
-    data = request.json
-    image_id = data.get('image_id')
-    # Koordinatların '[[x1, y1], [x2, y2]]' formatında geldiğini varsayıyoruz
-    coordinates = data.get('coordinates')
+@admin_required
+def admin_delete_user(user_id):
+    user_to_delete = User.query.get_or_404(user_id)
 
-    if not image_id or not coordinates:
-        return jsonify({'success': False, 'error': 'Eksik veri: Resim ID veya koordinatlar eksik.'}), 400
-
-    image = Image.query.get(image_id)
-    if not image:
-        return jsonify({'success': False, 'error': 'İlişkili resim bulunamadı.'}), 404
-
+    # Admin'in kendini silmesini engelle
+    if user_to_delete.id == current_user.id or user_to_delete.role == 'admin':
+        flash('Admin kullanıcısı silinemez.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     try:
-        # Bu resim için mevcut en yüksek oosit numarasını bul
-        # Örn: 'resim_1', 'resim_2', ... 'resim_10'
-        # 'resim_1' -> 1, 'resim_10' -> 10
-        existing_detections = Detection.query.filter_by(parent_image_id=image_id).all()
-        
-        max_index = 0
-        for det in existing_detections:
-            try:
-                # ID'nin sonundaki sayıyı al (örn: '..._10' -> 10)
-                index = int(det.id.split('_')[-1])
-                if index > max_index:
-                    max_index = index
-            except ValueError:
-                # ID sonu sayı değilse (beklenmedik durum)
-                pass
-        
-        # Yeni ID'yi belirle
-        new_index = max_index + 1
-        new_detection_id = f"{image_id}_{new_index}"
-        
-        # Yeni tespiti oluştur
-        new_detection = Detection(
-            id=new_detection_id,
-            parent_image_id=image_id,
-            coordinates_labelme={
-                "shape_type": "rectangle",
-                "points": coordinates
-            }
-        )
-        
-        db.session.add(new_detection)
+        # Uzmanı sil
+        # models.py'deki 'ondelete' kuralları çalışacak:
+        # - Atamaları (ImageAssignment) silinecek (CASCADE)
+        # - Puanları (Score) kalacak, user_id=NULL olacak (SET NULL)
+        # - Yüklemeleri (Image) kalacak, uploader_id=NULL olacak (SET NULL)
+        username = user_to_delete.username
+        db.session.delete(user_to_delete)
         db.session.commit()
-        
-        # Arayüzün (JavaScript) kendini güncelleyebilmesi için
-        # yeni oluşturulan oositin tüm verilerini geri döndür.
-        new_detection_data = {
-            "id": new_detection.id,
-            "coordinates_labelme": new_detection.coordinates_labelme,
-            "scores": { # Boş puan formu için
-                "sitoplazma": None,
-                "zona": None,
-                "kumulus": None,
-                "oopla": None
-            }
-        }
-        
-        return jsonify({'success': True, 'new_detection': new_detection_data})
-
+        flash(f"Uzman '{username}' başarıyla silindi.", 'success')
     except Exception as e:
         db.session.rollback()
-        print(f"HATA: /api/add_detection: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-    
-    # === YENİ: UZMANIN TESPİT (OOSİT) SİLMESİ İÇİN API ===
-@app.route('/api/delete_detection', methods=['POST'])
-@login_required
-def api_delete_detection():
-    data = request.json
-    detection_id = data.get('detection_id')
-
-    if not detection_id:
-        return jsonify({'success': False, 'error': 'Eksik veri: detection_id eksik.'}), 400
-
-    # Tespiti veritabanında bul
-    detection_to_delete = Detection.query.get(detection_id)
-    
-    if not detection_to_delete:
-        return jsonify({'success': False, 'error': 'Tespit bulunamadı.'}), 404
-
-    # (Güvenlik notu: İdeal olarak, bu tespiti sadece o resme atanan 
-    # veya yükleyen uzmanın silebildiğini de kontrol edebiliriz, 
-    # ancak şimdilik tüm giriş yapmış uzmanların silebildiğini varsayıyoruz.)
-
-    try:
-        # Tespiti sil. 
-        # models.py'deki cascade ayarı sayesinde, bu tespite 
-        # bağlı TÜM puanlar (Score) da otomatik olarak silinecektir.
-        db.session.delete(detection_to_delete)
-        db.session.commit()
+        flash(f"Uzman silinirken bir hata oluştu: {e}", 'danger')
         
-        # Arayüzün (JavaScript) kendini güncelleyebilmesi için
-        # silinen ID'yi geri döndür.
-        return jsonify({'success': True, 'deleted_id': detection_id})
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"HATA: /api/delete_detection: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
+    return redirect(url_for('admin_dashboard'))
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')

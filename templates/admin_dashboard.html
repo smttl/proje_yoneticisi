@@ -4,40 +4,45 @@
     <meta charset="UTF-8">
     <title>Admin Paneli</title>
     <style>
-        body { font-family: sans-serif; padding: 2rem; }
+        body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; }
         nav { display: flex; justify-content: space-between; align-items: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
+        table { 
+            width: 100%; border-collapse: collapse; margin-top: 1rem; 
+            background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #f9f9f9; }
+        tr:nth-child(even) { background-color: #fcfcfc; }
+        
         .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
         .success { background: #d4edda; color: #155724; }
         .danger { background: #f8d7da; color: #721c24; }
         .info { background: #d1ecf1; color: #0c5460; }
-        .container { display: flex; gap: 2rem; }
-        .col-main { flex-grow: 1; }
-        .col-side { width: 300px; flex-shrink: 0; }
-        .assignment-form { margin-top: 10px; }
-        .btn-download {
-            display: inline-block; padding: 10px 15px; background: #28a745; 
-            color: white; text-decoration: none; border-radius: 4px;
+        
+        /* Sayfa Düzeni */
+        .container { display: grid; grid-template-columns: 1fr 350px; gap: 2rem; }
+        .col-main { display: flex; flex-direction: column; gap: 2rem; }
+        .col-side { display: flex; flex-direction: column; gap: 2rem; }
+
+        /* Kutu Stilleri */
+        .box { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .box h2 { margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px;}
+        
+        /* Form Elemanları */
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input[type="text"], .form-group input[type="password"], .form-group select {
+            width: 90%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
         }
-        .btn-delete {
-            background: #dc3545; color: white; border: none; 
-            padding: 5px 10px; border-radius: 4px; cursor: pointer;
+        .btn {
+            padding: 10px 15px; border: none; border-radius: 4px; 
+            cursor: pointer; text-decoration: none; display: inline-block;
         }
-        /* YENİ: Yan paneldeki kutu stilleri */
-        .side-box {
-            background: #fff; border: 1px solid #ddd;
-            border-radius: 4px; padding: 15px; margin-top: 20px;
-        }
-        .side-box h2 { margin-top: 0; }
-        .side-box input[type="text"], .side-box input[type="password"] {
-            width: 90%; padding: 8px; margin-bottom: 10px;
-        }
-        .side-box button {
-            width: 100%; padding: 10px; background: #007bff;
-            color: white; border: none; border-radius: 4px; cursor: pointer;
-        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-sm { padding: 5px 10px; font-size: 0.9em; }
+        
     </style>
 </head>
 <body>
@@ -49,7 +54,8 @@
             <a href="{{ url_for('logout') }}">Çıkış Yap</a>
         </span>
     </nav>
-
+    <br>
+    
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -60,76 +66,149 @@
 
     <div class="container">
         <div class="col-main">
-            <h2>Tüm Görüntüler (Toplam: {{ images|length }})</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Görüntü ID</th>
-                        <th>Yükleyen Uzman</th>
-                        <th>Puanlama Detayı</th>
-                        <th>Uzmana Ata</th>
-                        <th>Yönet</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for image in images %}
-                    <tr>
-                        <td>{{ image.id }}</td>
-                        <td>{{ image.uploader.username if image.uploader else 'Admin/Bilinmiyor' }}</td>
-                        <td>
-                            <a href="{{ url_for('admin_image_detail', image_id=image.id) }}">Puanları Gör</a>
-                        </td>
-                        <td>
-                            <form class="assignment-form" method="POST" action="{{ url_for('admin_assign_image', image_id=image.id) }}">
-                                <select name="expert_id" required>
-                                    <option value="" disabled selected>Uzman Seç...</option>
-                                    {% for expert in experts %}
-                                    <option value="{{ expert.id }}">{{ expert.username }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit">Ata</button>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('admin_delete_image', image_id=image.id) }}" 
-                                  onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
-                                <button type="submit" class="btn-delete">Sil</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="5">Sistemde hiç görüntü yok.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            
+            <div class="box">
+                <h2>Uzman Performans İstatistikleri</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Uzman</th>
+                            <th>Atanan Resim</th>
+                            <th>Puanlanan Resim</th>
+                            <th>Tamamlama Oranı</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stat in expert_stats %}
+                        <tr>
+                            <td><strong>{{ stat.user.username }}</strong></td>
+                            <td>{{ stat.assigned_count }}</td>
+                            <td>{{ stat.scored_images_count }}</td>
+                            <td>
+                                {% if stat.assigned_count > 0 %}
+                                    {{ (stat.scored_images_count / stat.assigned_count * 100) | round(1) }}%
+                                {% else %}
+                                    0%
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4">Henüz 'uzman' rolünde kullanıcı yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="box">
+                <h2>Görüntü Puanlama Durumu</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Görüntü ID</th>
+                            <th>Puanlayan Uzman Sayısı</th>
+                            <th>Yükleyen</th>
+                            <th>Detaylar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stat in image_stats %}
+                        <tr>
+                            <td>{{ stat.image.id }}</td>
+                            <td>
+                                <strong>{{ stat.scorer_count }} Uzman</strong>
+                                {% if stat.scorer_count < 2 %} (Onay Bekliyor) {% endif %}
+                            </td>
+                            <td>{{ stat.image.uploader.username if stat.image.uploader else 'Bilinmiyor' }}</td>
+                            <td>
+                                <a href="{{ url_for('admin_image_detail', image_id=stat.image.id) }}" class="btn btn-primary btn-sm">Puanları Gör</a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4">Sistemde hiç görüntü yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="box">
+                <h2>Görüntü Yönetimi (Atama / Silme)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Görüntü ID</th>
+                            <th>Uzmana Ata</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stat in image_stats %} <tr>
+                            <td>{{ stat.image.id }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('admin_assign_image', image_id=stat.image.id) }}">
+                                    <select name="expert_id" required>
+                                        <option value="" disabled selected>Uzman Seç...</option>
+                                        {% for expert_stat in expert_stats %}
+                                        <option value="{{ expert_stat.user.id }}">{{ expert_stat.user.username }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="btn btn-primary btn-sm">Ata</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="POST" action="{{ url_for('admin_delete_image', image_id=stat.image.id) }}" 
+                                      onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Sil</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3">Sistemde hiç görüntü yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="col-side">
-            <div class="side-box">
-                <h2>Yeni Uzman Ekle</h2>
+            <div class="box">
+                <h2>Kullanıcı Yönetimi</h2>
                 <form method="POST" action="{{ url_for('admin_create_user') }}">
-                    <div>
+                    <h4>Yeni Uzman Ekle</h4>
+                    <div class="form-group">
                         <label for="username">Kullanıcı Adı:</label>
                         <input type="text" id="username" name="username" required>
                     </div>
-                    <div>
+                    <div class="form-group">
                         <label for="password">Şifre:</label>
                         <input type="password" id="password" name="password" required>
                     </div>
-                    <button type="submit">Uzmanı Oluştur</button>
+                    <button type="submit" class="btn btn-primary">Uzmanı Oluştur</button>
                 </form>
+                
+                <h4 style="margin-top: 20px;">Mevcut Uzmanlar</h4>
+                <table>
+                    <tbody>
+                        {% for stat in expert_stats %}
+                        <tr>
+                            <td>{{ stat.user.username }}</td>
+                            <td style="text-align: right;">
+                                <form method="POST" action="{{ url_for('admin_delete_user', user_id=stat.user.id) }}"
+                                      onsubmit="return confirm('`{{ stat.user.username }}` uzmanını silmek istediğinizden emin misiniz? (Verdiği puanlar kaybolmaz, anonimleşir)');">
+                                    <button type="submit" class="btn btn-danger btn-sm">Sil</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td>Aktif uzman yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
 
-            <div class="side-box">
-                <h2>İstatistikler</h2>
-                <p>Toplam Uzman: {{ experts|length }}</p>
-                <p>Toplam Görüntü: {{ images|length }}</p>
-            </div>
-            
-            <div class="side-box">
+            <div class="box">
                 <h2>Tüm Puanları İndir</h2>
                 <p>Tüm puanları Excel (.xlsx) dosyası olarak indirin.</p>
-                <a href="{{ url_for('admin_download_scores') }}" class="btn-download">Excel Olarak İndir</a>
+                <a href="{{ url_for('admin_download_scores') }}" class="btn btn-success">Excel Olarak İndir</a>
             </div>
         </div>
     </div>
