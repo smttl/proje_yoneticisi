@@ -18,7 +18,7 @@ Platform iki ana kullanıcı rolünden oluşur:
 - **👑 Admin (Yönetim yapar)**
 
 ---
-!(img/de.png)
+![Örnek](img/de.png)
 ## 🧑‍🔬 Uzman Arayüzü (Puanlama & Düzeltme)
 
 ### 📁 .czi Dosya Desteği  
@@ -48,7 +48,7 @@ Görüntü metadata’sındaki ölçek bilgisine dayanarak **µm cinsinden doğr
 - **Tespit Sil:** Yanlış tespitleri kolayca kaldırma  
 
 ---
-!(img/adminp.png)
+![admin](img/adminp.png)
 ## 👑 Admin Paneli (Yönetim & Veri Çıktısı)
 
 ### 📊 İstatistik Paneli
@@ -63,7 +63,7 @@ Görüntü metadata’sındaki ölçek bilgisine dayanarak **µm cinsinden doğr
 - Görüntüleri uzmanlara atama  
 - Hatalı / eski görüntüleri tüm skorlarıyla birlikte sistemden silme  
 
-!(img/adminpdy.png)
+![admin d](img/adminpdy.png)
 
 ### 📥 Detaylı İnceleme & İndirme
 - `.czi` metadata görüntüleme (Objektif, kanallar vb.)  
