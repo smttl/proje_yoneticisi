@@ -1,6 +1,6 @@
 # 🧬 Oosit Kalite Değerlendirme Platformu
 
-Bu proje, embriyologlar ve araştırmacılar için tasarlanmış yapay zekâ destekli (YOLOv8) bir **oosit kalite değerlendirme platformudur**.  
+Bu proje, araştırmacılar için tasarlanmış yapay zekâ destekli (YOLOv8) bir **oosit kalite değerlendirme platformudur**.  
 Sistem, **.czi (Zeiss)** formatındaki mikroskop görüntülerindeki oositleri otomatik olarak tespit eder ve uzmanların bu tespitleri **A-D sınıflandırması + 4 morfolojik kriter** ile puanlamasına olanak tanır.
 
 ![Örnek Arayüz](img/uzmanpy.png)
