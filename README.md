@@ -79,4 +79,38 @@ Görüntü metadata’sındaki ölçek bilgisine dayanarak **µm cinsinden doğr
   - MobileNetV2 eğitimi için hazır içerik  
 
 ---
+## 🏁 Kurulum ve Çalıştırma
+
+Bu proje **Debian Linux** üzerinde test edilmiştir.
+
+### 1. Sistem Gereksinimleri
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv build-essential libgl1-mesa-glx
+2. Projeyi Hazırlama
+Bash
+
+git clone 
+cd 
+
+# Sanal ortam kurulumu
+python3 -m venv venv
+source venv/bin/activate
+
+# Kütüphanelerin yüklenmesi
+pip install -r requirements.txt
+Not: Eğitilmiş best.pt modelinizi modelsv8/ klasörüne kopyalamayı unutmayın.
+
+3. Uygulamayı Başlatma
+Veritabanını oluşturun (Varsayılan kullanıcılar: admin/admin, uzman1/123456):
+
+Bash
+
+flask init-db
+Sunucuyu başlatın:
+
+Bash
+
+flask run --host=0.0.0.0
+Tarayıcıdan erişim: http://<sunucu_ip_adresiniz>:5000
 
