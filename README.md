@@ -3,7 +3,7 @@
 Bu proje, araştırmacılar için tasarlanmış yapay zekâ destekli (YOLOv8) bir **oosit kalite değerlendirme platformudur**.  
 Sistem, **.czi (Zeiss)** formatındaki mikroskop görüntülerindeki oositleri otomatik olarak tespit eder ve uzmanların bu tespitleri **A-D sınıflandırması + 4 morfolojik kriter** ile puanlamasına olanak tanır.
 
-![Örnek Arayüz](https://github.com/smttl/proje_yoneticisi/blob/ca677e48722f65e4893b8ac20a19a3782ad043ce/img/uzmanp.png)
+![Örnek Arayüz](https://raw.githubusercontent.com/smttl/proje_yoneticisi/refs/heads/main/img/uzmanp.png)
 
 Sistemin temel amacı, uzmanlardan toplanan yüksek kaliteli veriyi kullanarak **MobileNetV2** gibi modeller için  
 **512x512, kare formatlı bir sınıflandırma veri seti oluşturmak** ve yapay zekâ modellerini eğitmektir.
@@ -18,7 +18,7 @@ Platform iki ana kullanıcı rolünden oluşur:
 - **👑 Admin (Yönetim yapar)**
 
 ---
-![Örnek](https://github.com/smttl/proje_yoneticisi/blob/ca677e48722f65e4893b8ac20a19a3782ad043ce/img/de.png)
+![Örnek](https://raw.githubusercontent.com/smttl/proje_yoneticisi/refs/heads/main/img/de.png)
 ## 🧑‍🔬 Uzman Arayüzü (Puanlama & Düzeltme)
 
 ### 📁 .czi Dosya Desteği  
@@ -48,7 +48,7 @@ Görüntü metadata’sındaki ölçek bilgisine dayanarak **µm cinsinden doğr
 - **Tespit Sil:** Yanlış tespitleri kolayca kaldırma  
 
 ---
-![admin](https://github.com/smttl/proje_yoneticisi/blob/ca677e48722f65e4893b8ac20a19a3782ad043ce/img/adminp.png)
+![admin](https://raw.githubusercontent.com/smttl/proje_yoneticisi/refs/heads/main/img/adminp.png)
 ## 👑 Admin Paneli (Yönetim & Veri Çıktısı)
 
 ### 📊 İstatistik Paneli
@@ -63,7 +63,7 @@ Görüntü metadata’sındaki ölçek bilgisine dayanarak **µm cinsinden doğr
 - Görüntüleri uzmanlara atama  
 - Hatalı / eski görüntüleri tüm skorlarıyla birlikte sistemden silme  
 
-![admin d](https://github.com/smttl/proje_yoneticisi/blob/ca677e48722f65e4893b8ac20a19a3782ad043ce/img/adminpdy.png)
+![admin](https://raw.githubusercontent.com/smttl/proje_yoneticisi/refs/heads/main/img/adminpdy.png)
 
 ### 📥 Detaylı İnceleme & İndirme
 - `.czi` metadata görüntüleme (Objektif, kanallar vb.)  
