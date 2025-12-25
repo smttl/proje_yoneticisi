@@ -114,3 +114,5 @@ Bash
 flask run --host=0.0.0.0
 Tarayıcıdan erişim: http://<sunucu_ip_adresiniz>:5000
 
+
+
