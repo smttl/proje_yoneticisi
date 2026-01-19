@@ -1,57 +1,139 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <title>Puan Detayı: {{ image.id }}</title>
     <style>
-        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        body {
+            font-family: sans-serif;
+            display: flex;
+            height: 100vh;
+            margin: 0;
+        }
+
         #sidebar {
-            width: 350px; min-width: 350px; background: #f9f9f9;
-            border-left: 1px solid #ccc; overflow-y: auto; padding: 15px;
+            width: 350px;
+            min-width: 350px;
+            background: #f9f9f9;
+            border-left: 1px solid #ccc;
+            overflow-y: auto;
+            padding: 15px;
             flex-shrink: 0;
         }
+
         #main-content {
-            flex-grow: 1; overflow-y: auto;
-            padding: 20px; background: #f0f0f0;
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f0f0f0;
         }
+
         #image-preview {
-            background: #333; padding: 10px; border-radius: 4px; text-align: center;
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
         }
+
         #image-preview img {
-            max-width: 100%; max-height: 40vh; border: 1px solid #fff;
+            max-width: 100%;
+            max-height: 40vh;
+            border: 1px solid #fff;
         }
+
         .info-box {
-            background: #fff; border: 1px solid #ddd; border-radius: 4px;
-            margin-top: 20px; padding: 15px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 20px;
+            padding: 15px;
         }
-        .info-box h3 { margin-top: 0; }
-        .info-box ul { padding-left: 20px; margin: 0; }
-        .info-box li { margin-bottom: 5px; }
+
+        .info-box h3 {
+            margin-top: 0;
+        }
+
+        .info-box ul {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .info-box li {
+            margin-bottom: 5px;
+        }
+
         .download-links a {
-            display: inline-block; background: #007bff; color: white; text-decoration: none;
-            padding: 8px 12px; border-radius: 4px; margin-right: 5px; margin-bottom: 5px;
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-right: 5px;
+            margin-bottom: 5px;
         }
-        .download-links a.labelme { background: #17a2b8; }
+
+        .download-links a.labelme {
+            background: #17a2b8;
+        }
+
         .detection-card {
-            display: flex; gap: 15px; background: #fff;
-            border: 1px solid #ddd; border-radius: 4px;
-            padding: 15px; margin-top: 20px;
+            display: flex;
+            gap: 15px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
         }
-        .detection-crop { flex-shrink: 0; width: 200px; text-align: center; }
-        .detection-crop img { max-width: 100%; border: 2px solid #000; }
-        .detection-scores { flex-grow: 1; }
-        .detection-scores h4 { margin-top: 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
+
+        .detection-crop {
+            flex-shrink: 0;
+            width: 200px;
+            text-align: center;
+        }
+
+        .detection-crop img {
+            max-width: 100%;
+            border: 2px solid #000;
+        }
+
+        .detection-scores {
+            flex-grow: 1;
+        }
+
+        .detection-scores h4 {
+            margin-top: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
         /* YENİ: Genel Puan sütunu için vurgu */
-        th.grade-col, td.grade-col {
+        th.grade-col,
+        td.grade-col {
             font-weight: bold;
             text-align: center;
             background-color: #f0f8ff;
         }
     </style>
 </head>
+
 <body>
     <aside id="sidebar">
         <h2>Görüntü Yönetimi</h2>
@@ -74,21 +156,26 @@
             <h3>Dosyaları İndir</h3>
             <a href="{{ url_for('admin_download_czi', image_id=image.id) }}">Orijinal .CZI İndir</a>
             <a href="{{ url_for('admin_download_png', image_id=image.id) }}">Önizleme .PNG İndir</a>
-            <a href="{{ url_for('admin_download_labelme_image', image_id=image.id) }}" class="labelme">Tüm Oositler (LabelMe .JSON)</a>
+            <hr>
+            <a href="{{ url_for('admin_download_labelme_box', image_id=image.id) }}" class="labelme"
+                style="background:#28a745;">📦 Kutu Etiketlerini İndir (Model)</a>
+            <a href="{{ url_for('admin_download_labelme_polygon', image_id=image.id) }}" class="labelme"
+                style="background:#6f42c1;">🔷 Poligon Etiketlerini İndir (Morfoloji)</a>
         </div>
     </aside>
 
     <main id="main-content">
         <h2>Oosit Puanlama Detayları (Toplam: {{ image.detections|length }})</h2>
-        <p>Aşağıda bu görüntü için tespit edilen her oositin kırpılmış görüntüsü ve uzmanlar tarafından verilen puanlar listelenmiştir.</p>
-        
+        <p>Aşağıda bu görüntü için tespit edilen her oositin kırpılmış görüntüsü ve uzmanlar tarafından verilen puanlar
+            listelenmiştir.</p>
+
         {% for detection in image.detections %}
         <div class="detection-card">
             <div class="detection-crop">
                 <h4>Oosit: {{ detection.id.split('_')[-1] }}</h4>
                 <img src="{{ url_for('admin_image_crop', detection_id=detection.id) }}" alt="Kırpılmış Oosit">
             </div>
-            
+
             <div class="detection-scores">
                 <h4>Uzman Puanları</h4>
                 <table>
@@ -105,19 +192,21 @@
                     <tbody>
                         {% set scores_found = namespace(count=0) %}
                         {% for score in detection.scores %}
-                            <tr>
-                                <td><strong>{{ score.user.username }}</strong></td>
-                                <td class="grade-col">{{ score.grade | default('N/A', true) }}</td>
-                                <td>{{ score.score_sitoplazma | default('N/A', true) }}</td>
-                                <td>{{ score.score_zona | default('N/A', true) }}</td>
-                                <td>{{ score.score_kumulus | default('N/A', true) }}</td>
-                                <td>{{ score.score_oopla | default('N/A', true) }}</td>
-                            </tr>
-                            {% set scores_found.count = scores_found.count + 1 %}
+                        <tr>
+                            <td><strong>{{ score.user.username }}</strong></td>
+                            <td class="grade-col">{{ score.grade | default('N/A', true) }}</td>
+                            <td>{{ score.score_sitoplazma | default('N/A', true) }}</td>
+                            <td>{{ score.score_zona | default('N/A', true) }}</td>
+                            <td>{{ score.score_kumulus | default('N/A', true) }}</td>
+                            <td>{{ score.score_oopla | default('N/A', true) }}</td>
+                        </tr>
+                        {% set scores_found.count = scores_found.count + 1 %}
                         {% endfor %}
-                        
+
                         {% if scores_found.count == 0 %}
-                        <tr><td colspan="6">Bu oosit henüz puanlanmamış.</td></tr>
+                        <tr>
+                            <td colspan="6">Bu oosit henüz puanlanmamış.</td>
+                        </tr>
                         {% endif %}
                     </tbody>
                 </table>
@@ -131,4 +220,5 @@
         {% endfor %}
     </main>
 </body>
+
 </html>

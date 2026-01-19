@@ -134,9 +134,18 @@ def dashboard():
 
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            base_name, file_extension = os.path.splitext(filename)
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            image_id = f"{base_name}_{timestamp}"
+            file_extension = os.path.splitext(filename)[1]
+            
+            # YENI ISIMLENDIRME FORMATI: YYYYMMDD_HHMMSS_GunlukSira
+            now = datetime.now()
+            date_part = now.strftime('%Y%m%d')
+            time_part = now.strftime('%H%M%S')
+            
+            # Bugün eklenen dosya sayısını bul (ID bu tarihle başlayanlar)
+            daily_count = Image.query.filter(Image.id.like(f"{date_part}%")).count()
+            daily_index = daily_count + 1
+            
+            image_id = f"{date_part}_{time_part}_{daily_index}"
             czi_filename_on_server = f"{image_id}{file_extension}"
             czi_save_path = os.path.join(app.config['UPLOAD_FOLDER'], czi_filename_on_server)
             file.save(czi_save_path)
@@ -267,6 +276,8 @@ def api_add_detection():
     data = request.json
     image_id = data.get('image_id')
     coordinates = data.get('coordinates')
+    shape_type = data.get('shape_type', 'rectangle') # YENİ: shape_type parametresi (polygon/rectangle)
+    
     if not image_id or not coordinates:
         return jsonify({'success': False, 'error': 'Eksik veri'}), 400
     image = Image.query.get(image_id)
@@ -285,7 +296,10 @@ def api_add_detection():
         new_detection = Detection(
             id=new_detection_id,
             parent_image_id=image_id,
-            coordinates_labelme={"shape_type": "rectangle", "points": coordinates}
+            coordinates_labelme={
+                "shape_type": shape_type, # Polygon veya Rectangle
+                "points": coordinates
+            }
         )
         db.session.add(new_detection)
         db.session.commit()
@@ -470,10 +484,26 @@ def admin_download_png(image_id):
             app.config['PREVIEW_FOLDER'], os.path.basename(img.preview_path), as_attachment=True
         )
     except FileNotFoundError: abort(404, "Dosya bulunamadı.")
+@app.route('/admin/download/labelme/box/<image_id>')
+@login_required
+@admin_required
+def admin_download_labelme_box(image_id):
+    return _generate_labelme_json(image_id, filter_shape='rectangle')
+
+@app.route('/admin/download/labelme/polygon/<image_id>')
+@login_required
+@admin_required
+def admin_download_labelme_polygon(image_id):
+    return _generate_labelme_json(image_id, filter_shape='polygon')
+
+# Eski route, default olarak rectangle (kutu) döndürsün
 @app.route('/admin/download/labelme/image/<image_id>')
 @login_required
 @admin_required
 def admin_download_labelme_image(image_id):
+    return _generate_labelme_json(image_id, filter_shape='rectangle')
+
+def _generate_labelme_json(image_id, filter_shape=None):
     image = Image.query.get_or_404(image_id)
     labelme_output = {
         "version": "5.0.1", "flags": {}, "shapes": [],
@@ -485,16 +515,28 @@ def admin_download_labelme_image(image_id):
         with PILImage.open(preview_full_path) as pil_img:
             labelme_output["imageWidth"] = pil_img.width
             labelme_output["imageHeight"] = pil_img.height
-    except Exception: pass 
+    except Exception: pass
+    
     detections = Detection.query.filter_by(parent_image_id=image_id).all()
     for det in detections:
+        # shape_type veritabanından, yoksa default 'rectangle'
+        shape_type = det.coordinates_labelme.get('shape_type', 'rectangle')
+        
+        # Filtreleme: Eğer spesifik bir tip istenmişse ve uymuyorsa atla
+        if filter_shape and shape_type != filter_shape:
+            continue
+            
         shape = {
-            "label": det.id, "points": det.coordinates_labelme['points'],
-            "group_id": None, "shape_type": "rectangle", "flags": {}
+            "label": det.id,
+            "points": det.coordinates_labelme['points'],
+            "group_id": None,
+            "shape_type": shape_type,
+            "flags": {}
         }
         labelme_output["shapes"].append(shape)
+        
     return jsonify(labelme_output), 200, {
-        'Content-Disposition': f'attachment; filename={image.id}.json',
+        'Content-Disposition': f'attachment; filename={image.id}_{filter_shape or "all"}.json',
         'Content-Type': 'application/json'
     }
 

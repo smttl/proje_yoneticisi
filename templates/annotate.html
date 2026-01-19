@@ -34,6 +34,8 @@
         #tool-add.active { background: #208037; }
         #tool-delete { background: #dc3545; color: white; }
         #tool-delete.active { background: #b02a37; }
+        #tool-polygon { background: #6f42c1; color: white; }
+        #tool-polygon.active { background: #5a32a3; }
         
         #scoring-panel .detection {
             margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;
@@ -94,6 +96,7 @@
             <button id="tool-pan" class="tool-btn active">Gezin</button>
             <button id="tool-ruler" class="tool-btn">Cetvel</button>
             <button id="tool-add" class="tool-btn">Oosit Ekle</button>
+            <button id="tool-polygon" class="tool-btn">Çokgen Çiz</button>
             <button id="tool-delete" class="tool-btn">Tespit Sil</button>
             |
             <strong>Zoom:</strong>
@@ -136,7 +139,9 @@
         const zoomInfo = document.getElementById('zoom-info'); 
         const imageViewer = document.getElementById('image-viewer'); 
 
-        
+        let isPolygonDrawing = false;
+        let currentPolygonPoints = [];
+
         // --- 1. Başlangıç (Setup) ---
         window.onload = () => {
             if (img.complete) initializeCanvas();
@@ -189,6 +194,33 @@
                 ctx.fillStyle = 'red';
                 ctx.fillText(detection.id.split('_').pop(), x1, y1 > 10 ? y1 - 5 : y1 + 15 * zoomLevel);
             });
+            
+            // --- YENİ: Polygon/Çokgen Çizimi ---
+            detections.forEach(detection => {
+                const shapeType = detection.coordinates_labelme.shape_type || 'rectangle';
+                if (shapeType === 'polygon') {
+                    const points = detection.coordinates_labelme.points;
+                    if (points.length < 2) return;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(points[0][0] * scaleX, points[0][1] * scaleY);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i][0] * scaleX, points[i][1] * scaleY);
+                    }
+                    ctx.closePath();
+                    
+                    ctx.strokeStyle = '#6f42c1'; // Mor renk
+                    ctx.lineWidth = 2 * zoomLevel;
+                    ctx.stroke();
+                    ctx.fillStyle = 'rgba(111, 66, 193, 0.2)';
+                    ctx.fill();
+                    
+                    // ID Yazısı (İlk noktanın yanına)
+                    ctx.font = `${16 * zoomLevel}px Arial`; 
+                    ctx.fillStyle = '#6f42c1';
+                    ctx.fillText(detection.id.split('_').pop(), points[0][0] * scaleX, points[0][1] * scaleY);
+                }
+            });
             // B. Cetvel Çizimini Yap
             if (currentTool === 'ruler' && (isDrawing || drawEnd.x)) {
                 ctx.strokeStyle = '#00f';
@@ -214,6 +246,30 @@
                 ctx.strokeRect(drawStart.x, drawStart.y, width, height);
                 ctx.setLineDash([]);
             }
+            // D. Poligon Çizimi (Aktif)
+            if (currentTool === 'polygon' && currentPolygonPoints.length > 0) {
+                ctx.beginPath();
+                const startX = currentPolygonPoints[0][0] * scaleX;
+                const startY = currentPolygonPoints[0][1] * scaleY;
+                ctx.moveTo(startX, startY);
+                
+                for (let i = 1; i < currentPolygonPoints.length; i++) {
+                    ctx.lineTo(currentPolygonPoints[i][0] * scaleX, currentPolygonPoints[i][1] * scaleY);
+                }
+                
+                // Mouse ucuna giden geçici çizgi
+                if (drawEnd.x) {
+                    ctx.lineTo(drawEnd.x, drawEnd.y);
+                }
+                
+                ctx.strokeStyle = '#6f42c1';
+                ctx.lineWidth = 2 * zoomLevel;
+                ctx.stroke();
+                
+                // Başlangıç noktasını vurgula
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(startX - 3, startY - 3, 6, 6);
+            }
         }
         // ... (calculateDistance fonksiyonu aynı) ...
         function calculateDistance(start, end) {
@@ -234,7 +290,9 @@
         function setupTools() {
             document.getElementById('tool-pan').onclick = () => setTool('pan');
             document.getElementById('tool-ruler').onclick = () => setTool('ruler');
+            document.getElementById('tool-ruler').onclick = () => setTool('ruler');
             document.getElementById('tool-add').onclick = () => setTool('add');
+            document.getElementById('tool-polygon').onclick = () => setTool('polygon');
             document.getElementById('tool-delete').onclick = () => setTool('delete');
 
             canvas.onmousedown = (e) => {
@@ -242,6 +300,18 @@
                     isDrawing = true;
                     drawStart = { x: e.offsetX, y: e.offsetY };
                     drawEnd = { x: e.offsetX, y: e.offsetY };
+                } else if (currentTool === 'polygon') {
+                    const originalX = e.offsetX / zoomLevel / (canvas.width / img.naturalWidth / zoomLevel); // Biraz karışık oldu, basitleştirelim
+                    // Zoom ve Scale hesabı
+                    const scaleX = canvas.width / img.naturalWidth;
+                    const scaleY = canvas.height / img.naturalHeight;
+                    
+                    const rawX = e.offsetX / scaleX;
+                    const rawY = e.offsetY / scaleY;
+                    
+                    currentPolygonPoints.push([rawX, rawY]);
+                    drawEnd = { x: e.offsetX, y: e.offsetY }; // Çizgi update için
+                    drawAll();
                 } else if (currentTool === 'pan') {
                     isPanning = true;
                     panStart.x = e.clientX;
@@ -250,8 +320,20 @@
                 }
                 drawAll();
             };
+            
+            // Çift Tıklama ile Poligon Bitirme
+            canvas.ondblclick = (e) => {
+                if (currentTool === 'polygon' && currentPolygonPoints.length > 2) {
+                    saveNewDetection(currentPolygonPoints, 'polygon');
+                    currentPolygonPoints = [];
+                    drawEnd = {};
+                    setTool('pan');
+                }
+            };
             canvas.onmousemove = (e) => {
                 if ((currentTool === 'ruler' || currentTool === 'add') && isDrawing) {
+                    drawEnd = { x: e.offsetX, y: e.offsetY };
+                } else if (currentTool === 'polygon') {
                     drawEnd = { x: e.offsetX, y: e.offsetY };
                 } else if (currentTool === 'pan' && isPanning) {
                     const dx = e.clientX - panStart.x;
@@ -272,11 +354,10 @@
                         const canvasY1 = Math.min(drawStart.y, drawEnd.y);
                         const canvasX2 = Math.max(drawStart.x, drawEnd.x);
                         const canvasY2 = Math.max(drawStart.y, drawEnd.y);
-                        const originalCoords = [
                             [canvasX1 / zoomLevel, canvasY1 / zoomLevel],
                             [canvasX2 / zoomLevel, canvasY2 / zoomLevel]
                         ];
-                        saveNewDetection(originalCoords);
+                        saveNewDetection(originalCoords, 'rectangle');
                         setTool('pan'); 
                     }
                 } 
@@ -307,11 +388,15 @@
             document.getElementById('tool-pan').classList.toggle('active', tool === 'pan');
             document.getElementById('tool-ruler').classList.toggle('active', tool === 'ruler');
             document.getElementById('tool-add').classList.toggle('active', tool === 'add');
+            document.getElementById('tool-polygon').classList.toggle('active', tool === 'polygon');
             document.getElementById('tool-delete').classList.toggle('active', tool === 'delete');
             if (tool === 'pan') { canvas.style.cursor = 'grab'; rulerInfo.textContent = ''; }
-            else if (tool === 'ruler' || tool === 'add') { canvas.style.cursor = 'crosshair'; }
+            else if (tool === 'ruler' || tool === 'add' || tool === 'polygon') { canvas.style.cursor = 'crosshair'; }
             else if (tool === 'delete') { canvas.style.cursor = 'not-allowed'; }
             drawStart = {}; drawEnd = {};
+            // Poligon reset
+            if (tool !== 'polygon') currentPolygonPoints = [];
+            
             drawAll();
         }
 
@@ -323,11 +408,33 @@
             const scaleY = canvas.height / img.naturalHeight;
             for (let i = detections.length - 1; i >= 0; i--) {
                 const det = detections[i];
-                const coords = det.coordinates_labelme.points;
-                const x1 = coords[0][0] * scaleX, y1 = coords[0][1] * scaleY;
-                const x2 = coords[1][0] * scaleX, y2 = coords[1][1] * scaleY;
-                if (clickPos.x >= x1 && clickPos.x <= x2 && clickPos.y >= y1 && clickPos.y <= y2) {
-                    return det;
+                const shapeType = det.coordinates_labelme.shape_type || 'rectangle';
+                
+                if (shapeType === 'polygon') {
+                    // Poligon içinde mi basit kontrol (Bounding Box)
+                    // İleride "Point in Polygon" algoritması eklenebilir ama şu anlık basit box yeterli
+                    const points = det.coordinates_labelme.points;
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    points.forEach(p => {
+                        minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
+                        maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
+                    });
+                    
+                    // Scale uygula
+                    const sx1 = minX * scaleX, sy1 = minY * scaleY;
+                    const sx2 = maxX * scaleX, sy2 = maxY * scaleY;
+                    
+                    if (clickPos.x >= sx1 && clickPos.x <= sx2 && clickPos.y >= sy1 && clickPos.y <= sy2) {
+                        return det;
+                    }
+                } else {
+                    // Rectangle
+                    const coords = det.coordinates_labelme.points;
+                    const x1 = coords[0][0] * scaleX, y1 = coords[0][1] * scaleY;
+                    const x2 = coords[1][0] * scaleX, y2 = coords[1][1] * scaleY;
+                    if (clickPos.x >= x1 && clickPos.x <= x2 && clickPos.y >= y1 && clickPos.y <= y2) {
+                        return det;
+                    }
                 }
             }
             return null;
@@ -347,12 +454,16 @@
                 } else { alert('Hata: Tespit silinemedi. ' + result.error); }
             } catch (error) { alert('Tespit silinirken sunucuya bağlanılamadı.'); }
         }
-        async function saveNewDetection(originalCoords) {
+        async function saveNewDetection(originalCoords, shapeType='rectangle') {
             try {
                 const response = await fetch('/api/add_detection', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image_id: imageId, coordinates: originalCoords })
+                    body: JSON.stringify({ 
+                        image_id: imageId, 
+                        coordinates: originalCoords,
+                        shape_type: shapeType
+                    })
                 });
                 const result = await response.json();
                 if (result.success && result.new_detection) {
