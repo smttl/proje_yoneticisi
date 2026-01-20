@@ -8,7 +8,8 @@ import csv
 from PIL import Image as PILImage 
 # ...
 from datetime import datetime
-    flask, render_template, request, redirect, url_for, flash, abort,
+from flask import (
+    Flask, render_template, request, redirect, url_for, flash, abort,
     jsonify, session, send_file, send_from_directory, Response
 )
 from flask_sqlalchemy import SQLAlchemy
