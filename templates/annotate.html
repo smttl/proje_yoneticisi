@@ -382,6 +382,57 @@
             document.getElementById('btn-zoom-in').onclick = () => applyZoom(zoomLevel + 0.25);
             document.getElementById('btn-zoom-out').onclick = () => applyZoom(zoomLevel - 0.25);
             document.getElementById('btn-zoom-reset').onclick = () => initializeCanvas();
+
+            // --- YENİ: Mouse Tekerleği ile Zoom ---
+            imageViewer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+
+                const delta = Math.sign(e.deltaY) * -0.25; // Yukarı: Zoom In (+), Aşağı: Zoom Out (-)
+                let newZoom = zoomLevel + delta;
+
+                // Zoom sınırlarını kontrol et
+                newZoom = Math.max(0.25, Math.min(newZoom, 5.0));
+
+                if (newZoom !== zoomLevel) {
+                    // Zoom Merkezini Hesapla (Mouse Pozisyonuna Göre)
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+
+                    // Orijinal resim üzerindeki nokta
+                    const originalX = mouseX / zoomLevel;
+                    const originalY = mouseY / zoomLevel;
+
+                    applyZoom(newZoom);
+
+                    // Yeni scroll pozisyonunu ayarla (Mouse aynı noktada kalsın)
+                    // Yeni pozisyon = (Orijinal * YeniZoom) - (Mouse Ekran Pozisyonu)
+                    // Ancak scroll, viewer'ın sol üstüne göre ayarlanır.
+                    // Mouse'un viewer içindeki konumu (offset) değişmemeli.
+
+                    // Basit Yaklaşım: Merkez odaklı değil, mouse odaklı zoom
+                    // Mevcut scroll + (Mouse'un resim başından uzaklığı * oran değişimi) - (Mouse'un viewporttaki yeri * oran değişimi)
+                    // Daha basit: scrollWidth/Height oranını koru
+
+                    const scaleChange = newZoom / (zoomLevel - delta); // eskiZoom = zoomLevel - delta
+
+                    // Bu mantık biraz karmaşık, basit versiyon:
+                    // Sadece zoom yap, sonra mouse'un olduğu yere doğru kaydır
+
+                    // En temiz yöntem:
+                    const newCanvasW = img.naturalWidth * newZoom;
+                    const newCanvasH = img.naturalHeight * newZoom;
+
+                    const ratioX = mouseX / (img.naturalWidth * (zoomLevel - delta));
+                    const ratioY = mouseY / (img.naturalHeight * (zoomLevel - delta));
+
+                    const newScrollLeft = (ratioX * newCanvasW) - (e.clientX - imageViewer.getBoundingClientRect().left);
+                    const newScrollTop = (ratioY * newCanvasH) - (e.clientY - imageViewer.getBoundingClientRect().top);
+
+                    imageViewer.scrollLeft = newScrollLeft;
+                    imageViewer.scrollTop = newScrollTop;
+                }
+            }, { passive: false });
         }
         // ... (setupTools fonksiyonu (onmousedown, onmousemove, onmouseup) aynı) ...
         function setupTools() {
