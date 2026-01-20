@@ -1,54 +1,133 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <title>Değerlendir: {{ image.id }}</title>
     <style>
-        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
-        #main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-        #top-bar { 
-            padding: 10px; background: #f0f0f0; border-bottom: 1px solid #ccc; 
+        body {
+            font-family: sans-serif;
+            display: flex;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #top-bar {
+            padding: 10px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #ccc;
             flex-shrink: 0;
         }
-        #image-viewer { 
-            flex-grow: 1; background: #333; 
-            position: relative; overflow: auto;
+
+        #image-viewer {
+            flex-grow: 1;
+            background: #333;
+            position: relative;
+            overflow: auto;
         }
-        #image-container { 
-            position: relative; width: fit-content; margin: auto; 
+
+        #image-container {
+            position: relative;
+            width: fit-content;
+            margin: auto;
         }
-        #oocyte-image { display: block; }
-        #drawing-canvas { position: absolute; top: 0; left: 0; }
+
+        #oocyte-image {
+            display: block;
+        }
+
+        #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
         #sidebar {
-            width: 350px; min-width: 350px; background: #f9f9f9;
-            border-left: 1px solid #ccc; overflow-y: auto; padding: 15px;
+            width: 350px;
+            min-width: 350px;
+            background: #f9f9f9;
+            border-left: 1px solid #ccc;
+            overflow-y: auto;
+            padding: 15px;
             flex-shrink: 0;
         }
-        
-        .tool-btn, .zoom-btn { 
-            padding: 8px 12px; margin-right: 5px; cursor: pointer; 
-            background: #ddd; border: 1px solid #aaa; border-radius: 4px;
+
+        .tool-btn,
+        .zoom-btn {
+            padding: 8px 12px;
+            margin-right: 5px;
+            cursor: pointer;
+            background: #ddd;
+            border: 1px solid #aaa;
+            border-radius: 4px;
         }
-        .tool-btn.active { background: #007bff; color: white; }
-        #tool-add { background: #28a745; color: white; }
-        #tool-add.active { background: #208037; }
-        #tool-delete { background: #dc3545; color: white; }
-        #tool-delete.active { background: #b02a37; }
-        #tool-polygon { background: #6f42c1; color: white; }
-        #tool-polygon.active { background: #5a32a3; }
-        
+
+        .tool-btn.active {
+            background: #007bff;
+            color: white;
+        }
+
+        #tool-add {
+            background: #28a745;
+            color: white;
+        }
+
+        #tool-add.active {
+            background: #208037;
+        }
+
+        #tool-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        #tool-delete.active {
+            background: #b02a37;
+        }
+
+        #tool-polygon {
+            background: #6f42c1;
+            color: white;
+        }
+
+        #tool-polygon.active {
+            background: #5a32a3;
+        }
+
         #scoring-panel .detection {
-            margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
-        #scoring-panel .detection h3 { margin-top: 0; }
-        #scoring-panel .form-group { margin-bottom: 10px; }
-        #scoring-panel .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
-        
+
+        #scoring-panel .detection h3 {
+            margin-top: 0;
+        }
+
+        #scoring-panel .form-group {
+            margin-bottom: 10px;
+        }
+
+        #scoring-panel .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
         /* Puan Buton Grubu */
         .score-buttons {
             display: flex;
             justify-content: space-between;
         }
+
         .score-btn {
             flex-grow: 1;
             padding: 8px 5px;
@@ -59,25 +138,43 @@
             border-radius: 4px;
             font-weight: bold;
         }
-        .score-btn:hover { background: #ddd; }
+
+        .score-btn:hover {
+            background: #ddd;
+        }
+
         .score-btn.active {
             background: #28a745;
             color: white;
             border-color: #208037;
         }
+
         /* YENİ: A/B/C/D Butonları için özel stil */
         .score-btn.grade-btn {
             font-size: 1.1em;
         }
+
         .score-btn.grade-btn.active {
-            background: #007bff; /* A/B/C/D seçilince mavi olsun */
+            background: #007bff;
+            /* A/B/C/D seçilince mavi olsun */
             border-color: #0056b3;
         }
-        
-        .status-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ccc; margin-left: 5px; }
-        .status-light.saved { background: #28a745; }
+
+        .status-light {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            margin-left: 5px;
+        }
+
+        .status-light.saved {
+            background: #28a745;
+        }
     </style>
 </head>
+
 <body>
 
     <aside id="sidebar">
@@ -86,7 +183,7 @@
         <p><strong>Ölçek:</strong> {{ image.metadata_json.get('scale_um_per_pixel') | round(3) }} µm/pixel</p>
         <hr>
         <div id="scoring-panel">
-            </div>
+        </div>
     </aside>
 
     <main id="main-content">
@@ -104,10 +201,10 @@
             <button id="btn-zoom-out" class="zoom-btn">-</button>
             <button id="btn-zoom-reset" class="zoom-btn">Sıfırla</button>
             <span id="zoom-info" style="margin-left: 10px;">100%</span>
-            
+
             <span id="ruler-info" style="margin-left: 20px; font-weight: bold; color: #00f;"></span>
         </div>
-        
+
         <div id="image-viewer">
             <div id="image-container">
                 <img id="oocyte-image" src="{{ url_for('static', filename=image.preview_path) }}" alt="Oosit Görüntüsü">
@@ -119,25 +216,25 @@
     <script>
         // --- Flask'tan Verileri Al ---
         const imageId = "{{ image.id }}";
-        let detections = {{ detections_json | safe }}; 
+        let detections = {{ detections_json | safe }};
         const metadata = {{ metadata_json | safe }};
         const scaleUmPerPixel = metadata.scale_um_per_pixel;
 
         // ... (Global Değişkenler ve Element Referansları aynı) ...
         let currentTool = 'pan';
         let isDrawing = false;
-        let drawStart = {}; 
-        let drawEnd = {};   
-        let zoomLevel = 1.0; 
-        let isPanning = false; 
-        let panStart = { x: 0, y: 0 }; 
+        let drawStart = {};
+        let drawEnd = {};
+        let zoomLevel = 1.0;
+        let isPanning = false;
+        let panStart = { x: 0, y: 0 };
         const img = document.getElementById('oocyte-image');
         const canvas = document.getElementById('drawing-canvas');
         const ctx = canvas.getContext('2d');
         const scoringPanel = document.getElementById('scoring-panel');
         const rulerInfo = document.getElementById('ruler-info');
-        const zoomInfo = document.getElementById('zoom-info'); 
-        const imageViewer = document.getElementById('image-viewer'); 
+        const zoomInfo = document.getElementById('zoom-info');
+        const imageViewer = document.getElementById('image-viewer');
 
         let isPolygonDrawing = false;
         let currentPolygonPoints = [];
@@ -147,7 +244,7 @@
             if (img.complete) initializeCanvas();
             else img.onload = initializeCanvas;
             setupTools();
-            setupZoom(); 
+            setupZoom();
             populateScoringPanel();
         };
 
@@ -156,7 +253,7 @@
             const initialScale = viewerWidth / img.naturalWidth;
             applyZoom(initialScale >= 1.0 ? 1.0 : initialScale);
         }
-        
+
         // ... (applyZoom fonksiyonu aynı) ...
         function applyZoom(newLevel) {
             zoomLevel = Math.max(0.25, Math.min(newLevel, 5.0));
@@ -188,35 +285,35 @@
                 const width = x2 - x1;
                 const height = y2 - y1;
                 ctx.strokeStyle = 'red';
-                ctx.lineWidth = 2 * zoomLevel; 
+                ctx.lineWidth = 2 * zoomLevel;
                 ctx.strokeRect(x1, y1, width, height);
-                ctx.font = `${16 * zoomLevel}px Arial`; 
+                ctx.font = `${16 * zoomLevel}px Arial`;
                 ctx.fillStyle = 'red';
                 ctx.fillText(detection.id.split('_').pop(), x1, y1 > 10 ? y1 - 5 : y1 + 15 * zoomLevel);
             });
-            
+
             // --- YENİ: Polygon/Çokgen Çizimi ---
             detections.forEach(detection => {
                 const shapeType = detection.coordinates_labelme.shape_type || 'rectangle';
                 if (shapeType === 'polygon') {
                     const points = detection.coordinates_labelme.points;
                     if (points.length < 2) return;
-                    
+
                     ctx.beginPath();
                     ctx.moveTo(points[0][0] * scaleX, points[0][1] * scaleY);
                     for (let i = 1; i < points.length; i++) {
                         ctx.lineTo(points[i][0] * scaleX, points[i][1] * scaleY);
                     }
                     ctx.closePath();
-                    
+
                     ctx.strokeStyle = '#6f42c1'; // Mor renk
                     ctx.lineWidth = 2 * zoomLevel;
                     ctx.stroke();
                     ctx.fillStyle = 'rgba(111, 66, 193, 0.2)';
                     ctx.fill();
-                    
+
                     // ID Yazısı (İlk noktanın yanına)
-                    ctx.font = `${16 * zoomLevel}px Arial`; 
+                    ctx.font = `${16 * zoomLevel}px Arial`;
                     ctx.fillStyle = '#6f42c1';
                     ctx.fillText(detection.id.split('_').pop(), points[0][0] * scaleX, points[0][1] * scaleY);
                 }
@@ -224,7 +321,7 @@
             // B. Cetvel Çizimini Yap
             if (currentTool === 'ruler' && (isDrawing || drawEnd.x)) {
                 ctx.strokeStyle = '#00f';
-                ctx.lineWidth = 2 * zoomLevel; 
+                ctx.lineWidth = 2 * zoomLevel;
                 ctx.beginPath();
                 ctx.moveTo(drawStart.x, drawStart.y);
                 ctx.lineTo(drawEnd.x, drawEnd.y);
@@ -239,7 +336,7 @@
             // C. Oosit Ekleme Kutusunu Çiz
             if (currentTool === 'add' && isDrawing) {
                 ctx.strokeStyle = '#28a745';
-                ctx.lineWidth = 2 * zoomLevel; 
+                ctx.lineWidth = 2 * zoomLevel;
                 ctx.setLineDash([5, 5]);
                 const width = drawEnd.x - drawStart.x;
                 const height = drawEnd.y - drawStart.y;
@@ -252,20 +349,20 @@
                 const startX = currentPolygonPoints[0][0] * scaleX;
                 const startY = currentPolygonPoints[0][1] * scaleY;
                 ctx.moveTo(startX, startY);
-                
+
                 for (let i = 1; i < currentPolygonPoints.length; i++) {
                     ctx.lineTo(currentPolygonPoints[i][0] * scaleX, currentPolygonPoints[i][1] * scaleY);
                 }
-                
+
                 // Mouse ucuna giden geçici çizgi
                 if (drawEnd.x) {
                     ctx.lineTo(drawEnd.x, drawEnd.y);
                 }
-                
+
                 ctx.strokeStyle = '#6f42c1';
                 ctx.lineWidth = 2 * zoomLevel;
                 ctx.stroke();
-                
+
                 // Başlangıç noktasını vurgula
                 ctx.fillStyle = 'blue';
                 ctx.fillRect(startX - 3, startY - 3, 6, 6);
@@ -273,8 +370,8 @@
         }
         // ... (calculateDistance fonksiyonu aynı) ...
         function calculateDistance(start, end) {
-            const canvasPixelDist = Math.sqrt((end.x - start.x)**2 + (end.y - start.y)**2);
-            const originalPixelDist = canvasPixelDist / zoomLevel; 
+            const canvasPixelDist = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+            const originalPixelDist = canvasPixelDist / zoomLevel;
             const umDist = originalPixelDist * scaleUmPerPixel;
             return { pixelDist: originalPixelDist, umDist: umDist };
         }
@@ -284,7 +381,7 @@
         function setupZoom() {
             document.getElementById('btn-zoom-in').onclick = () => applyZoom(zoomLevel + 0.25);
             document.getElementById('btn-zoom-out').onclick = () => applyZoom(zoomLevel - 0.25);
-            document.getElementById('btn-zoom-reset').onclick = () => initializeCanvas(); 
+            document.getElementById('btn-zoom-reset').onclick = () => initializeCanvas();
         }
         // ... (setupTools fonksiyonu (onmousedown, onmousemove, onmouseup) aynı) ...
         function setupTools() {
@@ -305,10 +402,10 @@
                     // Zoom ve Scale hesabı
                     const scaleX = canvas.width / img.naturalWidth;
                     const scaleY = canvas.height / img.naturalHeight;
-                    
+
                     const rawX = e.offsetX / scaleX;
                     const rawY = e.offsetY / scaleY;
-                    
+
                     currentPolygonPoints.push([rawX, rawY]);
                     drawEnd = { x: e.offsetX, y: e.offsetY }; // Çizgi update için
                     drawAll();
@@ -320,7 +417,7 @@
                 }
                 drawAll();
             };
-            
+
             // Çift Tıklama ile Poligon Bitirme
             canvas.ondblclick = (e) => {
                 if (currentTool === 'polygon' && currentPolygonPoints.length > 2) {
@@ -354,13 +451,14 @@
                         const canvasY1 = Math.min(drawStart.y, drawEnd.y);
                         const canvasX2 = Math.max(drawStart.x, drawEnd.x);
                         const canvasY2 = Math.max(drawStart.y, drawEnd.y);
+                        const originalCoords = [
                             [canvasX1 / zoomLevel, canvasY1 / zoomLevel],
                             [canvasX2 / zoomLevel, canvasY2 / zoomLevel]
                         ];
                         saveNewDetection(originalCoords, 'rectangle');
-                        setTool('pan'); 
+                        setTool('pan');
                     }
-                } 
+                }
                 else if (isPanning) {
                     isPanning = false;
                     if (currentTool === 'pan') canvas.style.cursor = 'grab';
@@ -396,12 +494,12 @@
             drawStart = {}; drawEnd = {};
             // Poligon reset
             if (tool !== 'polygon') currentPolygonPoints = [];
-            
+
             drawAll();
         }
 
         // --- 4. Puanlama Paneli ve Kaydetme (GÜNCELLENDİ) ---
-        
+
         // ... (findClickedDetection, deleteDetectionOnServer, saveNewDetection aynı) ...
         function findClickedDetection(clickPos) {
             const scaleX = canvas.width / img.naturalWidth;
@@ -409,7 +507,7 @@
             for (let i = detections.length - 1; i >= 0; i--) {
                 const det = detections[i];
                 const shapeType = det.coordinates_labelme.shape_type || 'rectangle';
-                
+
                 if (shapeType === 'polygon') {
                     // Poligon içinde mi basit kontrol (Bounding Box)
                     // İleride "Point in Polygon" algoritması eklenebilir ama şu anlık basit box yeterli
@@ -419,11 +517,11 @@
                         minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
                         maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
                     });
-                    
+
                     // Scale uygula
                     const sx1 = minX * scaleX, sy1 = minY * scaleY;
                     const sx2 = maxX * scaleX, sy2 = maxY * scaleY;
-                    
+
                     if (clickPos.x >= sx1 && clickPos.x <= sx2 && clickPos.y >= sy1 && clickPos.y <= sy2) {
                         return det;
                     }
@@ -454,13 +552,13 @@
                 } else { alert('Hata: Tespit silinemedi. ' + result.error); }
             } catch (error) { alert('Tespit silinirken sunucuya bağlanılamadı.'); }
         }
-        async function saveNewDetection(originalCoords, shapeType='rectangle') {
+        async function saveNewDetection(originalCoords, shapeType = 'rectangle') {
             try {
                 const response = await fetch('/api/add_detection', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        image_id: imageId, 
+                    body: JSON.stringify({
+                        image_id: imageId,
                         coordinates: originalCoords,
                         shape_type: shapeType
                     })
@@ -473,7 +571,7 @@
                 } else { alert('Hata: Oosit eklenemedi. ' + result.error); }
             } catch (error) { alert('Oosit eklenirken sunucuya bağlanılamadı.'); }
         }
-        
+
         // GÜNCELLENDİ: A/B/C/D Butonlarını Ekler
         function populateScoringPanel() {
             scoringPanel.innerHTML = '';
@@ -482,17 +580,20 @@
                 const numB = parseInt(b.id.split('_').pop());
                 return numA - numB;
             });
-            
+
             detections.forEach(det => {
                 const scoreForm = document.createElement('div');
                 scoreForm.className = 'detection';
                 scoreForm.id = `score-form-${det.id}`;
-                
+
                 const scores = det.scores;
                 const isSaved = (scores.grade || Object.values(scores).some(s => s !== null));
-                
-                let formHTML = `<h3>Oosit: ${det.id.split('_').pop()} <span id="status-${det.id}" class="status-light ${isSaved ? 'saved' : ''}"></span></h3>`;
-                
+
+                let formHTML = `<h3 style="cursor:pointer;" title="Odaklanmak için tıklayın" onclick="focusOnDetection('${det.id}')">
+                    🔍 Oosit: ${det.id.split('_').pop()} 
+                    <span id="status-${det.id}" class="status-light ${isSaved ? 'saved' : ''}"></span>
+                </h3>`;
+
                 // === YENİ: Genel Kalite (A, B, C, D) Butonları ===
                 formHTML += `
                     <div class="form-group">
@@ -519,7 +620,7 @@
                     { name: 'Kumulus', key: 'kumulus' },
                     { name: 'Ooplazma', key: 'oopla' }
                 ];
-                
+
                 criteria.forEach(crit => {
                     formHTML += `
                         <div class="form-group">
@@ -537,24 +638,24 @@
                     }
                     formHTML += `</div></div>`;
                 });
-                
+
                 scoreForm.innerHTML = formHTML;
                 scoringPanel.appendChild(scoreForm);
             });
         }
-        
+
         // GÜNCELLENDİ: Tıklanan butonu ayarlar ve kaydeder
         function handleScoreClick(event, detectionId) {
-            event.preventDefault(); 
+            event.preventDefault();
             const clickedButton = event.target;
-            
+
             // 1. Arayüzü anında güncelle
             const buttonGroup = clickedButton.parentElement;
             buttonGroup.querySelectorAll('.score-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             clickedButton.classList.add('active');
-            
+
             // 2. Skoru sunucuya kaydet
             saveScores(detectionId);
         }
@@ -563,7 +664,7 @@
         async function saveScores(detectionId) {
             const form = document.getElementById(`score-form-${detectionId}`);
             const statusLight = document.getElementById(`status-${detectionId}`);
-            
+
             // 1. Genel Kalite (Grade) Puanını Oku
             const activeGradeButton = form.querySelector(`.score-buttons[data-criterion="grade"] .score-btn.active`);
             const grade = activeGradeButton ? activeGradeButton.dataset.value : null;
@@ -575,20 +676,20 @@
                 const activeButton = form.querySelector(`.score-buttons[data-criterion="${critKey}"] .score-btn.active`);
                 scores[critKey] = activeButton ? Number(activeButton.dataset.value) : null;
             });
-            
+
             try {
                 const response = await fetch('/api/save_score', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        detection_id: detectionId, 
+                    body: JSON.stringify({
+                        detection_id: detectionId,
                         grade: grade, // YENİ
-                        scores: scores 
+                        scores: scores
                     })
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     statusLight.classList.add('saved');
                 } else {
@@ -598,6 +699,48 @@
                 alert('Puanlar kaydedilemedi. Sunucu hatası.');
             }
         }
+        // --- YENİ: Otomatik Odaklanma (Auto-Zoom) ---
+        function focusOnDetection(detectionId) {
+            const det = detections.find(d => d.id === detectionId);
+            if (!det) return;
+
+            // Koordinat sınırlarını bul
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const points = det.coordinates_labelme.points;
+
+            points.forEach(p => {
+                minX = Math.min(minX, p[0]);
+                minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]);
+                maxY = Math.max(maxY, p[1]);
+            });
+
+            // Merkez noktayı hesapla (orijinal boyutlarda)
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            // Zoom Yap (Örneğin 3x)
+            applyZoom(3.0);
+
+            // Scroll Pozisyonunu Ayarla
+            // Hedeflenen merkez nokta, viewer'ın ortasına gelmeli
+            // Viewer scrollLeft = (centerX * zoomLevel) - (viewerWidth / 2)
+
+            const viewerWidth = imageViewer.clientWidth;
+            const viewerHeight = imageViewer.clientHeight;
+
+            const targetScrollX = (centerX * zoomLevel) - (viewerWidth / 2);
+            const targetScrollY = (centerY * zoomLevel) - (viewerHeight / 2);
+
+            imageViewer.scrollTo({
+                left: targetScrollX,
+                top: targetScrollY,
+                behavior: 'smooth'
+            });
+
+            // Görsel Vurgu (Opsiyonel): Geçici bir border eklenebilir ama şu anlık zoom yeterli.
+        }
     </script>
 </body>
+
 </html>

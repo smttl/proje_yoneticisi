@@ -503,6 +503,71 @@ def admin_download_labelme_polygon(image_id):
 def admin_download_labelme_image(image_id):
     return _generate_labelme_json(image_id, filter_shape='rectangle')
 
+# === YENİ: Pascal VOC XML (LabelImg) Export ===
+import xml.etree.ElementTree as ET
+
+@app.route('/admin/download/xml/<image_id>')
+@login_required
+@admin_required
+def admin_download_xml(image_id):
+    xml_content, filename = _generate_pascal_voc_xml(image_id)
+    return Response(
+        xml_content,
+        mimetype='application/xml',
+        headers={'Content-Disposition': f'attachment;filename={filename}'}
+    )
+
+def _generate_pascal_voc_xml(image_id):
+    image = Image.query.get_or_404(image_id)
+    preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], f"{image.id}.png")
+    
+    # XML Kök Elementi
+    annotation = ET.Element('annotation')
+    
+    ET.SubElement(annotation, 'folder').text = 'images'
+    ET.SubElement(annotation, 'filename').text = f"{image.id}.png"
+    ET.SubElement(annotation, 'path').text = preview_full_path
+    
+    source = ET.SubElement(annotation, 'source')
+    ET.SubElement(source, 'database').text = 'Unknown'
+    
+    # Resim Boyutları
+    width, height, depth = 0, 0, 3
+    try:
+        with PILImage.open(preview_full_path) as pil_img:
+            width, height = pil_img.width, pil_img.height
+    except Exception: pass
+    
+    size = ET.SubElement(annotation, 'size')
+    ET.SubElement(size, 'width').text = str(width)
+    ET.SubElement(size, 'height').text = str(height)
+    ET.SubElement(size, 'depth').text = str(depth)
+    
+    ET.SubElement(annotation, 'segmented').text = '0'
+    
+    # Tespitler
+    detections = Detection.query.filter_by(parent_image_id=image_id).all()
+    for det in detections:
+        obj = ET.SubElement(annotation, 'object')
+        ET.SubElement(obj, 'name').text = 'oocyte' # Sınıf adı sabit 'oocyte'
+        ET.SubElement(obj, 'pose').text = 'Unspecified'
+        ET.SubElement(obj, 'truncated').text = '0'
+        ET.SubElement(obj, 'difficult').text = '0'
+        
+        # Bounding Box Hesapla (Poligon olsa bile box'a çevir)
+        points = det.coordinates_labelme['points']
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        
+        bndbox = ET.SubElement(obj, 'bndbox')
+        ET.SubElement(bndbox, 'xmin').text = str(int(min(xs)))
+        ET.SubElement(bndbox, 'ymin').text = str(int(min(ys)))
+        ET.SubElement(bndbox, 'xmax').text = str(int(max(xs)))
+        ET.SubElement(bndbox, 'ymax').text = str(int(max(ys)))
+        
+    xml_str = ET.tostring(annotation, encoding='utf-8')
+    return xml_str, f"{image.id}.xml"
+
 def _generate_labelme_json(image_id, filter_shape=None):
     image = Image.query.get_or_404(image_id)
     labelme_output = {

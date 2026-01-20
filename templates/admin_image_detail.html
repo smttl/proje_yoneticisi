@@ -161,6 +161,8 @@
                 style="background:#28a745;">📦 Kutu Etiketlerini İndir (Model)</a>
             <a href="{{ url_for('admin_download_labelme_polygon', image_id=image.id) }}" class="labelme"
                 style="background:#6f42c1;">🔷 Poligon Etiketlerini İndir (Morfoloji)</a>
+            <a href="{{ url_for('admin_download_xml', image_id=image.id) }}" class="labelme"
+                style="background:#ffc107; color:black;">📄 XML Etiketlerini İndir (LabelImg)</a>
         </div>
     </aside>
 
