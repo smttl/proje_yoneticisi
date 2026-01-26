@@ -517,6 +517,47 @@ def admin_download_xml(image_id):
         headers={'Content-Disposition': f'attachment;filename={filename}'}
     )
 
+@app.route('/admin/download_all_xml_dataset')
+@login_required
+@admin_required
+def admin_download_all_xml_dataset():
+    # 1. Hafızada bir ZIP buffer oluştur
+    zip_buffer = io.BytesIO()
+    
+    try:
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_f:
+            images = Image.query.all()
+            count = 0
+            
+            for img in images:
+                # A. PNG Dosyasını Ekle
+                png_filename = f"{img.id}.png"
+                preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], png_filename)
+                
+                if os.path.exists(preview_full_path):
+                    zip_f.write(preview_full_path, arcname=png_filename)
+                    
+                    # B. XML Dosyasını Ekle
+                    # Helper fonksiyondan XML içeriğini al
+                    xml_content, xml_filename = _generate_pascal_voc_xml(img.id)
+                    zip_f.writestr(xml_filename, xml_content)
+                    
+                    count += 1
+        
+        zip_buffer.seek(0)
+        flash(f"{count} adet görüntü ve XML dosyası başarıyla sıkıştırıldı.", "success")
+        
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'Tum_Veri_Seti_LabelImg_{datetime.now().strftime("%Y%m%d")}.zip'
+        )
+        
+    except Exception as e:
+        flash(f"Zip oluşturulurken hata: {e}", "danger")
+        return redirect(url_for('admin_dashboard'))
+
 def _generate_pascal_voc_xml(image_id):
     image = Image.query.get_or_404(image_id)
     preview_full_path = os.path.join(app.config['PREVIEW_FOLDER'], f"{image.id}.png")
@@ -567,6 +608,119 @@ def _generate_pascal_voc_xml(image_id):
         
     xml_str = ET.tostring(annotation, encoding='utf-8')
     return xml_str, f"{image.id}.xml"
+
+@app.route('/admin/rename/image/<image_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_rename_image(image_id):
+    old_image = Image.query.get_or_404(image_id)
+    new_image_id = request.form.get('new_image_id', '').strip()
+
+    if not new_image_id:
+        flash('Yeni görsel adı boş olamaz.', 'danger')
+        return redirect(url_for('admin_image_detail', image_id=image_id))
+
+    if new_image_id == image_id:
+        flash('Yeni ad eski ad ile aynı olamaz.', 'warning')
+        return redirect(url_for('admin_image_detail', image_id=image_id))
+
+    # 1. Yeni ID'nin benzersiz olduğunu kontrol et
+    if Image.query.get(new_image_id):
+        flash(f"Bu ID ('{new_image_id}') zaten kullanımda. Lütfen başka bir ad seçin.", 'danger')
+        return redirect(url_for('admin_image_detail', image_id=image_id))
+
+    # 2. Dosya Yolları
+    old_czi_path = old_image.file_path
+    old_preview_path = os.path.join(app.config['PREVIEW_FOLDER'], os.path.basename(old_image.preview_path))
+    
+    # Uzantıyı koruyarak yeni dosya adlarını oluştur
+    extension = os.path.splitext(old_czi_path)[1]
+    new_czi_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{new_image_id}{extension}")
+    new_preview_filename = f"{new_image_id}.png"
+    new_preview_path_abs = os.path.join(app.config['PREVIEW_FOLDER'], new_preview_filename)
+    new_preview_path_rel = f"previews/{new_preview_filename}"
+
+    try:
+        # 3. Dosyaları Fiziksel Olarak Yeniden Adlandır
+        if os.path.exists(old_czi_path):
+            os.rename(old_czi_path, new_czi_path)
+        
+        if os.path.exists(old_preview_path):
+            os.rename(old_preview_path, new_preview_path_abs)
+
+        # 4. Veritabanı İşlemleri (Transaction)
+        # Yeni Image kaydını oluştur
+        new_image = Image(
+            id=new_image_id,
+            file_path=new_czi_path,
+            preview_path=new_preview_path_rel,
+            metadata_json=old_image.metadata_json,
+            uploader_id=old_image.uploader_id
+        )
+        db.session.add(new_image)
+        db.session.flush() # ID'nin oluşması için
+
+        # Atamaları Taşı
+        for assignment in old_image.assignments:
+            new_assignment = ImageAssignment(
+                image_id=new_image_id,
+                expert_id=assignment.expert_id,
+                assigned_at=assignment.assigned_at
+            )
+            db.session.add(new_assignment)
+
+        # Tespitleri (ve Puanları) Taşı
+        # detection id formatı: {image_id}_{index}
+        for old_det in old_image.detections:
+            try:
+                # index'i eski ID'den çıkar
+                index_part = old_det.id.split('_')[-1]
+            except:
+                # Eğer index bulunamazsa rastgele bir şey vermek yerine loop index kullanabiliriz ama genelde formatımız belli
+                index_part = "0"
+            
+            new_det_id = f"{new_image_id}_{index_part}"
+            
+            new_det = Detection(
+                id=new_det_id,
+                parent_image_id=new_image_id,
+                coordinates_labelme=old_det.coordinates_labelme
+            )
+            db.session.add(new_det)
+            db.session.flush() # new_det.id oluşması için
+
+            # Puanları eski tespitten yeni tespite taşı
+            for old_score in old_det.scores:
+                new_score = Score(
+                    detection_id=new_det_id,
+                    user_id=old_score.user_id,
+                    grade=old_score.grade,
+                    score_sitoplazma=old_score.score_sitoplazma,
+                    score_zona=old_score.score_zona,
+                    score_kumulus=old_score.score_kumulus,
+                    score_oopla=old_score.score_oopla,
+                    timestamp=old_score.timestamp
+                )
+                db.session.add(new_score)
+
+        # Eski kaydı sil (Cascade ile eski Detection, Score ve Assignment'lar silinecek)
+        db.session.delete(old_image)
+        db.session.commit()
+
+        flash(f"Görüntü adı '{image_id}' -> '{new_image_id}' olarak başarıyla değiştirildi.", 'success')
+        return redirect(url_for('admin_image_detail', image_id=new_image_id))
+
+    except Exception as e:
+        db.session.rollback()
+        # Dosya yeniden adlandırmayı geri almaya çalış (Rollback File System)
+        try:
+            if os.path.exists(new_czi_path): os.rename(new_czi_path, old_czi_path)
+            if os.path.exists(new_preview_path_abs): os.rename(new_preview_path_abs, old_preview_path)
+        except:
+            pass # Geri alma sırasında hata olursa yapacak bir şey yok, kritik loglanabilir
+            
+        flash(f"Ad değiştirme sırasında bir hata oluştu: {e}", 'danger')
+        return redirect(url_for('admin_image_detail', image_id=image_id))
 
 def _generate_labelme_json(image_id, filter_shape=None):
     image = Image.query.get_or_404(image_id)

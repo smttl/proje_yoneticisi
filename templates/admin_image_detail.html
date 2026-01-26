@@ -164,6 +164,20 @@
             <a href="{{ url_for('admin_download_xml', image_id=image.id) }}" class="labelme"
                 style="background:#ffc107; color:black;">📄 XML Etiketlerini İndir (LabelImg)</a>
         </div>
+
+        <div class="info-box" style="border: 2px solid #dc3545;">
+            <h3 style="color: #dc3545;">Yönetici İşlemleri</h3>
+
+            <h4>Ad Değiştir</h4>
+            <form method="POST" action="{{ url_for('admin_rename_image', image_id=image.id) }}"
+                onsubmit="return confirm('Bu işlem veritabanında ve dosya sisteminde kalıcı değişiklik yapacaktır. Emin misiniz?');">
+                <input type="text" name="new_image_id" placeholder="Yeni Görsel Adı (Uzantısız)" required
+                    style="width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;">
+                <button type="submit"
+                    style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; width: 100%;">Adı
+                    Değiştir</button>
+            </form>
+        </div>
     </aside>
 
     <main id="main-content">

@@ -1,74 +1,180 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <title>Admin Paneli</title>
     <style>
-        body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; }
-        nav { display: flex; justify-content: space-between; align-items: center; }
-        table { 
-            width: 100%; border-collapse: collapse; margin-top: 1rem; 
-            background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        body {
+            font-family: sans-serif;
+            padding: 2rem;
+            background: #f4f4f4;
         }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background: #f9f9f9; }
-        tr:nth-child(even) { background-color: #fcfcfc; }
-        
-        .flash { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
-        .success { background: #d4edda; color: #155724; }
-        .danger { background: #f8d7da; color: #721c24; }
-        .info { background: #d1ecf1; color: #0c5460; }
-        
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: #f9f9f9;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fcfcfc;
+        }
+
+        .flash {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
         /* Sayfa Düzeni */
-        .container { display: grid; grid-template-columns: 1fr 350px; gap: 2rem; }
-        .col-main { display: flex; flex-direction: column; gap: 2rem; }
-        .col-side { display: flex; flex-direction: column; gap: 2rem; }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 2rem;
+        }
+
+        .col-main {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .col-side {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
 
         /* Kutu Stilleri */
-        .box { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .box h2 { margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px;}
-        
-        /* Form Elemanları */
-        .form-group { margin-bottom: 10px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
-        .form-group input[type="text"], .form-group input[type="password"], .form-group select {
-            width: 90%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
+        .box {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
-        .btn {
-            padding: 10px 15px; border: none; border-radius: 4px; 
-            cursor: pointer; text-decoration: none; display: inline-block;
+
+        .box h2 {
+            margin-top: 0;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+
+        /* Form Elemanları */
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
             font-weight: bold;
         }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-info { background: #17a2b8; color: white; } /* Veri seti için */
-        .btn-sm { padding: 5px 10px; font-size: 0.9em; }
-        
+
+        .form-group input[type="text"],
+        .form-group input[type="password"],
+        .form-group select {
+            width: 90%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        /* Veri seti için */
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
+
 <body>
     <nav>
         <h1>Admin Paneli</h1>
         <span>
-            Hoş geldin, {{ current_user.username }} (Admin) | 
-            <a href="{{ url_for('dashboard') }}">Uzman Paneline Git</a> | 
+            Hoş geldin, {{ current_user.username }} (Admin) |
+            <a href="{{ url_for('dashboard') }}">Uzman Paneline Git</a> |
             <a href="{{ url_for('logout') }}">Çıkış Yap</a>
         </span>
     </nav>
     <br>
-    
+
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash {{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
     {% endwith %}
 
     <div class="container">
         <div class="col-main">
-            
+
             <div class="box">
                 <h2>Uzman Performans İstatistikleri</h2>
                 <table>
@@ -88,14 +194,16 @@
                             <td>{{ stat.scored_images_count }}</td>
                             <td>
                                 {% if stat.assigned_count > 0 %}
-                                    {{ (stat.scored_images_count / stat.assigned_count * 100) | round(1) }}%
+                                {{ (stat.scored_images_count / stat.assigned_count * 100) | round(1) }}%
                                 {% else %}
-                                    0%
+                                0%
                                 {% endif %}
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="4">Henüz 'uzman' rolünde kullanıcı yok.</td></tr>
+                        <tr>
+                            <td colspan="4">Henüz 'uzman' rolünde kullanıcı yok.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -118,15 +226,17 @@
                             <td>{{ stat.image.id }}</td>
                             <td>
                                 <strong>{{ stat.scorer_count }} Uzman</strong>
-                                {% if stat.scorer_count < 2 %} (Onay Bekliyor) {% endif %}
-                            </td>
+                                {% if stat.scorer_count < 2 %} (Onay Bekliyor) {% endif %} </td>
                             <td>{{ stat.image.uploader.username if stat.image.uploader else 'Bilinmiyor' }}</td>
                             <td>
-                                <a href="{{ url_for('admin_image_detail', image_id=stat.image.id) }}" class="btn btn-primary btn-sm">Puanları Gör</a>
+                                <a href="{{ url_for('admin_image_detail', image_id=stat.image.id) }}"
+                                    class="btn btn-primary btn-sm">Puanları Gör</a>
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="4">Sistemde hiç görüntü yok.</td></tr>
+                        <tr>
+                            <td colspan="4">Sistemde hiç görüntü yok.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -147,25 +257,29 @@
                         <tr>
                             <td>{{ stat.image.id }}</td>
                             <td>
-                                <form method="POST" action="{{ url_for('admin_assign_image', image_id=stat.image.id) }}">
+                                <form method="POST"
+                                    action="{{ url_for('admin_assign_image', image_id=stat.image.id) }}">
                                     <select name="expert_id" required>
                                         <option value="" disabled selected>Uzman Seç...</option>
                                         {% for expert_stat in expert_stats %}
-                                        <option value="{{ expert_stat.user.id }}">{{ expert_stat.user.username }}</option>
+                                        <option value="{{ expert_stat.user.id }}">{{ expert_stat.user.username }}
+                                        </option>
                                         {% endfor %}
                                     </select>
                                     <button type="submit" class="btn btn-primary btn-sm">Ata</button>
                                 </form>
                             </td>
                             <td>
-                                <form method="POST" action="{{ url_for('admin_delete_image', image_id=stat.image.id) }}" 
-                                      onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
+                                <form method="POST" action="{{ url_for('admin_delete_image', image_id=stat.image.id) }}"
+                                    onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
                                     <button type="submit" class="btn btn-danger btn-sm">Sil</button>
                                 </form>
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3">Sistemde hiç görüntü yok.</td></tr>
+                        <tr>
+                            <td colspan="3">Sistemde hiç görüntü yok.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -187,7 +301,7 @@
                     </div>
                     <button type="submit" class="btn btn-primary">Uzmanı Oluştur</button>
                 </form>
-                
+
                 <h4 style="margin-top: 20px;">Mevcut Uzmanlar</h4>
                 <table>
                     <tbody>
@@ -196,13 +310,15 @@
                             <td>{{ stat.user.username }}</td>
                             <td style="text-align: right;">
                                 <form method="POST" action="{{ url_for('admin_delete_user', user_id=stat.user.id) }}"
-                                      onsubmit="return confirm('`{{ stat.user.username }}` uzmanını silmek istediğinizden emin misiniz?');">
+                                    onsubmit="return confirm('`{{ stat.user.username }}` uzmanını silmek istediğinizden emin misiniz?');">
                                     <button type="submit" class="btn btn-danger btn-sm">Sil</button>
                                 </form>
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td>Aktif uzman yok.</td></tr>
+                        <tr>
+                            <td>Aktif uzman yok.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -211,15 +327,25 @@
             <div class="box">
                 <h2>Raporlar ve Veri Seti</h2>
                 <p>Tüm puanları Excel (.xlsx) olarak indirin.</p>
-                <a href="{{ url_for('admin_download_scores') }}" class="btn btn-success" style="width: 90%; text-align: center;">Excel Olarak İndir</a>
+                <a href="{{ url_for('admin_download_scores') }}" class="btn btn-success"
+                    style="width: 90%; text-align: center;">Excel Olarak İndir</a>
                 <hr style="margin: 20px 0;">
-                
+
                 <p>MobileNetV2 eğitimi için 512x512 veri setini (.zip) indirin.</p>
-                <a href="{{ url_for('admin_download_classification_dataset') }}" class="btn btn-info" style="width: 90%; text-align: center;">
+                <a href="{{ url_for('admin_download_classification_dataset') }}" class="btn btn-info"
+                    style="width: 90%; text-align: center;">
                     Eğitim Veri Setini İndir (.zip)
+                </a>
+
+                <hr style="margin: 20px 0;">
+                <p>Tüm Veri Setini (PNG + XML) İndir (LabelImg)</p>
+                <a href="{{ url_for('admin_download_all_xml_dataset') }}" class="btn btn-primary"
+                    style="background: #6610f2; width: 90%; text-align: center;">
+                    Tüm Veri Setini İndir (.zip)
                 </a>
             </div>
         </div>
     </div>
 </body>
+
 </html>
