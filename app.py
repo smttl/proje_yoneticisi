@@ -38,7 +38,7 @@ app.config['SECRET_KEY'] = 'COK_GIZLI_BIR_ANAHTAR_12345'
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}' 
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 app.config['PREVIEW_FOLDER'] = os.path.join(basedir, 'static/previews')
-app.config['ALLOWED_EXTENSIONS'] = {'czi'}
+app.config['ALLOWED_EXTENSIONS'] = {'czi', 'tiff', 'tif'}
 app.config['YOLO_MODEL_PATH'] = 'modelsv8/best.pt' 
 os.makedirs(instance_dir, exist_ok=True) 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -395,6 +395,43 @@ def admin_assign_image(image_id):
         db.session.add(new_assignment)
         db.session.commit()
         flash('Görüntü başarıyla uzmana atandı.', 'success')
+        flash('Görüntü başarıyla uzmana atandı.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/assign_bulk', methods=['POST'])
+@login_required
+@admin_required
+def admin_assign_bulk():
+    expert_id = request.form.get('expert_id')
+    image_ids = request.form.getlist('image_ids')
+
+    if not expert_id:
+        flash('Lütfen bir uzman seçin.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
+    if not image_ids:
+        flash('Lütfen en az bir görüntü seçin.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    count = 0
+    for image_id in image_ids:
+        existing = ImageAssignment.query.filter_by(image_id=image_id, expert_id=expert_id).first()
+        if not existing:
+            new_assignment = ImageAssignment(image_id=image_id, expert_id=expert_id)
+            db.session.add(new_assignment)
+            count += 1
+    
+    try:
+        db.session.commit()
+        if count > 0:
+            flash(f'{count} adet görüntü başarıyla seçilen uzmana atandı.', 'success')
+        else:
+            flash('Seçilen görüntülerin hepsi zaten bu uzmana atanmış.', 'info')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Atama sırasında hata oluştu: {str(e)}', 'danger')
+
     return redirect(url_for('admin_dashboard'))
 
 

@@ -244,45 +244,84 @@
 
             <div class="box">
                 <h2>Görüntü Yönetimi (Atama / Silme)</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Görüntü ID</th>
-                            <th>Uzmana Ata</th>
-                            <th>İşlem</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stat in image_stats %}
-                        <tr>
-                            <td>{{ stat.image.id }}</td>
-                            <td>
-                                <form method="POST"
-                                    action="{{ url_for('admin_assign_image', image_id=stat.image.id) }}">
-                                    <select name="expert_id" required>
-                                        <option value="" disabled selected>Uzman Seç...</option>
-                                        {% for expert_stat in expert_stats %}
-                                        <option value="{{ expert_stat.user.id }}">{{ expert_stat.user.username }}
-                                        </option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="submit" class="btn btn-primary btn-sm">Ata</button>
-                                </form>
-                            </td>
-                            <td>
-                                <form method="POST" action="{{ url_for('admin_delete_image', image_id=stat.image.id) }}"
-                                    onsubmit="return confirm('Görüntüyü ve tüm verilerini kalıcı olarak silmek istediğinizden emin misiniz?');">
-                                    <button type="submit" class="btn btn-danger btn-sm">Sil</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3">Sistemde hiç görüntü yok.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+
+                <!-- TOPLU ATAMA FORMU BAŞLANGICI -->
+                <form method="POST" action="{{ url_for('admin_assign_bulk') }}">
+                    <div
+                        style="background: #e9ecef; padding: 10px; margin-bottom: 15px; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                        <strong>Toplu Atama:</strong>
+                        <select name="expert_id" required
+                            style="padding: 5px; border-radius: 4px; border: 1px solid #ced4da;">
+                            <option value="" disabled selected>Uzman Seçiniz...</option>
+                            {% for expert_stat in expert_stats %}
+                            <option value="{{ expert_stat.user.id }}">{{ expert_stat.user.username }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary btn-sm">Seçilenleri Ata</button>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 40px; text-align: center;">
+                                    <input type="checkbox" onclick="toggleAll(this)">
+                                </th>
+                                <th>Görüntü ID</th>
+                                <th>Uzmana Ata (Tekli)</th>
+                                <th>İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stat in image_stats %}
+                            <tr>
+                                <td style="text-align: center;">
+                                    <input type="checkbox" name="image_ids" value="{{ stat.image.id }}">
+                                </td>
+                                <td>{{ stat.image.id }}</td>
+                                <td>
+                                    <!-- Tekli Atama Formu (URL değişmeli çünkü iç içe form olmaz, ama JS ile çözeriz veya ayrı tutarız) -->
+                                    <!-- NOT: HTML standardında form içinde form olmaz. O yüzden bu tekli formu 'form' taginden çıkarıp buton onclick ile JS submit yapacağız veya basitçe kaldıracağız. -->
+                                    <!-- Kolaylık olsun diye tekli atamayı "Detay" sayfasına taşıyabiliriz veya burada JS kullanabiliriz. -->
+                                    <!-- Şimdilik basit çözüm: Tekli atamayı kaldırıyorum, toplu atama zaten tekli de çalışır. -->
+                                    <!-- Veya 'form' attribute kullanarak dışarı taşıyabiliriz. -->
+
+                                    <button type="button" class="btn btn-primary btn-sm"
+                                        onclick="document.getElementById('expert_selector').value = ''; alert('Lütfen yukarıdaki toplu atama panelini kullanın.');">
+                                        Yukarıdan Seç
+                                    </button>
+                                </td>
+                                <td>
+                                    <!-- Silme Formu da iç içe olamaz. 'form' attribute'u ile dışarı bağlıyoruz. -->
+                                    <button type="submit" form="delete-form-{{ stat.image.id }}"
+                                        class="btn btn-danger btn-sm">Sil</button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4">Sistemde hiç görüntü yok.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </form>
+                <!-- TOPLU ATAMA FORMU BİTİŞİ -->
+
+                <!-- SİLME FORMLARI (Döngü dışına/tablo dışına alınmalı) -->
+                {% for stat in image_stats %}
+                <form id="delete-form-{{ stat.image.id }}" method="POST"
+                    action="{{ url_for('admin_delete_image', image_id=stat.image.id) }}"
+                    onsubmit="return confirm('Görüntüyü silmek istediğinizden emin misiniz?');" style="display: none;">
+                </form>
+                {% endfor %}
+
+                <script>
+                    function toggleAll(source) {
+                        checkboxes = document.getElementsByName('image_ids');
+                        for (var i = 0, n = checkboxes.length; i < n; i++) {
+                            checkboxes[i].checked = source.checked;
+                        }
+                    }
+                </script>
             </div>
         </div>
 

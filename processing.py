@@ -13,6 +13,9 @@ def get_objective_name_from_xml(xml_root):
     if xml_root is None: return "Bilinmiyor"
     try:
         # Zeiss XML'inde objektif adı için en yaygın yolu dene
+        # Eğer xml_root bir Element değilse (TIFF vb.), hata vermesin
+        if not hasattr(xml_root, 'find'): return "Bilinmiyor"
+
         objective_node = xml_root.find(".//{*}Information/{*}Instrument/{*}Objectives/{*}Objective")
         if objective_node is not None and 'Name' in objective_node.attrib:
             return objective_node.attrib['Name'] # örn: "Plan-Apochromat 20x/0.8"
@@ -32,6 +35,8 @@ def get_acquisition_date_from_xml(xml_root):
     """
     if xml_root is None: return "Bilinmiyor"
     try:
+        if not hasattr(xml_root, 'find'): return "Bilinmiyor"
+
         # Zeiss XML'inde en yaygın yolu dene
         # Yol: .../Metadata/Information/Image/AcquisitionDateAndTime
         date_node = xml_root.find(".//{*}Information/{*}Image/{*}AcquisitionDateAndTime")
@@ -70,9 +75,13 @@ def process_czi_image(czi_path, image_id, preview_folder, yolo_model_path):
         
         # 1a. Ölçek (Scale)
         if img.physical_pixel_sizes.X is None:
-            raise ValueError("Metadata içinde fiziksel piksel boyutu (X) bulunamadı.")
-        scale_x_meters = img.physical_pixel_sizes.X
-        scale_um_per_pixel = scale_x_meters * 1_000_000 
+            # TIFF vb. formatlarda metadata yoksa varsayılan ata veya uyar
+            print("UYARI: Fiziksel piksel boyutu (X) bulunamadı. Varsayılan (1.0) atanıyor.")
+            scale_x_meters = 1.0e-6 # 1 mikron varsayalım
+            scale_um_per_pixel = 1.0
+        else:
+            scale_x_meters = img.physical_pixel_sizes.X
+            scale_um_per_pixel = scale_x_meters * 1_000_000 
         
         # 1b. Diğer Metadata'lar
         channel_names = img.channel_names          # Kanal İsimleri (Liste)
